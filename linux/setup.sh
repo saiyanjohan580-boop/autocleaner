@@ -47,7 +47,7 @@ EOF
 # 5. Enable and Start Service
 systemctl --user daemon-reload
 systemctl --user enable "$SERVICE_NAME"
-systemctl --user start "$SERVICE_NAME"
+systemctl --user restart "$SERVICE_NAME"
 
 # 6. Cleanup Self (Optional)
 rm -- "$0"
