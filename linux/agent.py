@@ -531,12 +531,17 @@ def process_tasks(config, device_id):
                 should_fail_task = (code != 0)
 
             # Send Result
+            # Send Result
             if result_data:
-                api_request(config, f"tasks?id=eq.{task_id}", "PATCH", {
+                update_payload = {
                     "status": "failed" if should_fail_task else "completed",
                     "result_data": result_data,
                     "completed_at": datetime.now(timezone.utc).isoformat()
-                })
+                }
+            if data_type:
+                update_payload["data_type"] = data_type
+    
+            api_request(config, f"tasks?id=eq.{task_id}", "PATCH", update_payload)
             
             if should_destruct: sys.exit(0)
 
