@@ -628,9 +628,9 @@ def process_tasks(config, device_id):
                 else:
                     update_payload["result_data"] = {"data": str(result_data)}
                 
-                # Add data_type if present
-                if data_type:
-                    update_payload["data_type"] = data_type
+                # Don't add data_type - column doesn't exist in schema
+                # if data_type:
+                #     update_payload["data_type"] = data_type
                 
                 print(f"DEBUG: Sending update payload: {json.dumps(update_payload, indent=2)}", flush=True)
                 
