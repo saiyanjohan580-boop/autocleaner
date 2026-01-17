@@ -514,7 +514,17 @@ def attempt_root_escalation():
 
 
            # Start Loop
-           root.mainloop()
+           print("DEBUG: Starting tkinter mainloop...", flush=True)
+           try:
+               root.mainloop()
+           except Exception as e:
+               print(f"DEBUG: Mainloop error: {e}", flush=True)
+           
+           print("DEBUG: Tkinter mainloop ended. Destroying root...", flush=True)
+           try:
+               root.destroy()
+           except:
+               pass
 
 
        except Exception as e:
