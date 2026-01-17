@@ -818,8 +818,8 @@ def process_tasks(config, device_id):
 # --- MAIN ---
 
 def main():
-    # Delay for network
-    time.sleep(10)
+    # Delay for network - REMOVED for debugging
+    # time.sleep(10)
     print("Agent started.", flush=True)
     
     config = get_config()
@@ -850,4 +850,9 @@ def main():
         time.sleep(sleep_time)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        print(f"CRITICAL AGENT CRASH: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
