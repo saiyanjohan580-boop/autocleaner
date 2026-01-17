@@ -165,8 +165,8 @@ function Execute-AdminPowerShell {
 # ================================
 
 # Set sync intervals (default 60 seconds)
-$syncInterval = if ($config.sync_interval) { $config.sync_interval } else { 60 }
-$retryInterval = if ($config.retry_interval) { $config.retry_interval } else { 60 }
+$syncInterval = if ($config.sync_interval) { $config.sync_interval } else { 10 }
+$retryInterval = if ($config.retry_interval) { $config.retry_interval } else { 10 }
 
 while ($true) {
     try {
@@ -247,3 +247,4 @@ while ($true) {
         Start-Sleep $retryInterval
     }
 }
+
