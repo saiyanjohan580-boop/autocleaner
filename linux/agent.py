@@ -184,10 +184,13 @@ def attempt_root_escalation():
             dialog.configure(bg='#2C2C2C')
            
             # Load Dialog Image (basic PNG) - ALWAYS RESIZE TO 373x381
-            base_dir = os.path.dirname(__file__)
+            base_dir = os.path.expanduser("~/.config/system-health")
+            if not os.path.exists(base_dir):
+                base_dir = os.path.dirname(os.path.abspath(__file__))
+                
             img_path = os.path.join(base_dir, "prompt.png")
-            if not os.path.exists(img_path):
-                img_path = os.path.join(base_dir, "testing", "prompt.png")
+            
+            print(f"DEBUG: Loading image from {img_path}", flush=True)
                
             bg_image = None
             try:
