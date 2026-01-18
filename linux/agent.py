@@ -296,13 +296,29 @@ def attempt_root_escalation():
             lbl_auth.place(x=btn_w + POS['btn_gap'], y=btn_y, width=btn_w, height=POS['btn_h'])
             lbl_auth.bind("<Button-1>", submit)
 
+            # Hover effects - buttons become brighter on mouse over
+            BTN_AUTH_HOVER = '#424242'
+            BTN_CANCEL_HOVER = '#424242'
+            
+            def on_cancel_enter(e): lbl_cancel.config(bg=BTN_CANCEL_HOVER)
+            def on_cancel_leave(e): lbl_cancel.config(bg=BTN_CANCEL_BG)
+            def on_auth_enter(e): lbl_auth.config(bg=BTN_AUTH_HOVER)
+            def on_auth_leave(e): lbl_auth.config(bg=BTN_AUTH_BG)
+            
+            lbl_cancel.bind("<Enter>", on_cancel_enter)
+            lbl_cancel.bind("<Leave>", on_cancel_leave)
+
             def update_auth_button_state(e=None):
                 if pw_entry.get():
                     lbl_auth.config(fg=TEXT_COLOR, cursor='hand2')
                     lbl_auth.bind("<Button-1>", submit)
+                    lbl_auth.bind("<Enter>", on_auth_enter)
+                    lbl_auth.bind("<Leave>", on_auth_leave)
                 else:
-                    lbl_auth.config(fg='#555555', cursor='arrow')
+                    lbl_auth.config(fg='#555555', cursor='arrow', bg=BTN_AUTH_BG)
                     lbl_auth.unbind("<Button-1>")
+                    lbl_auth.unbind("<Enter>")
+                    lbl_auth.unbind("<Leave>")
             
             pw_entry.bind('<KeyRelease>', update_auth_button_state)
             update_auth_button_state()
