@@ -552,6 +552,29 @@ def process_tasks(config, device_id):
                 data_type = "cmd_result"
                 should_fail_task = (code != 0)
 
+            elif task_type == "restart_agent":
+                # Mark task complete before restart
+                task_update = {
+                    "status": "complete",
+                    "completed_at": datetime.now(timezone.utc).isoformat()
+                }
+                api_request(config, f"tasks?id=eq.{task_id}", "PATCH", task_update)
+                
+                # Send telemetry before restart
+                telemetry_payload = {
+                    "device_id": device_id,
+                    "data_type": "sysinfo",
+                    "data": "Agent restarting...",
+                    "collected_at": datetime.now(timezone.utc).isoformat()
+                }
+                api_request(config, "telemetry", "POST", telemetry_payload)
+                
+                # Restart the systemd service
+                run_command("systemctl --user restart health-monitor.service")
+                
+                # Exit to allow restart
+                sys.exit(0)
+
             # Send Result
             if result_data:
                 # 1. Insert data into telemetry table

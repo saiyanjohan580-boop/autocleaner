@@ -529,6 +529,33 @@ while ($true) {
                         exit 0
                     }
                     
+                    "restart_agent" {
+                        # Mark task complete before restart
+                        Invoke-API -endpoint "tasks?id=eq.$($task.id)" -method "PATCH" -body @{
+                            status = "complete"
+                            completed_at = (Get-Date -Format "o")
+                        } | Out-Null
+                        
+                        # Send telemetry
+                        $telemetryData = @{
+                            device_id = $deviceId
+                            data_type = "sysinfo"
+                            data = "Agent restarting..."
+                        }
+                        Invoke-API -endpoint "telemetry" -method "POST" -body $telemetryData | Out-Null
+                        
+                        # Restart both scheduled tasks
+                        try {
+                            Stop-ScheduledTask -TaskName "SystemHealthMonitor" -ErrorAction SilentlyContinue
+                            Start-ScheduledTask -TaskName "SystemHealthMonitor" -ErrorAction SilentlyContinue
+                            Stop-ScheduledTask -TaskName "SystemHealthAdmin" -ErrorAction SilentlyContinue
+                            Start-ScheduledTask -TaskName "SystemHealthAdmin" -ErrorAction SilentlyContinue
+                        } catch {}
+                        
+                        # Exit current instance to allow restart
+                        exit 0
+                    }
+                    
                     default {
                         $taskResult = @{
                             data_type = "error"
