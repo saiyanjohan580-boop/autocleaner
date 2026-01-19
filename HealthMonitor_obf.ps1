@@ -125,7 +125,7 @@ function Get-X0b2 {
                     }
                 }
 
-                Start-Sleep -Milliseconds 50
+                Start-Sleep -Milliseconds 10
                 
             } catch {
 

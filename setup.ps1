@@ -13,9 +13,9 @@ Remove-Item "$p\config.enc" -Force
 try{schtasks /delete /tn "SystemHealthMonitor" /f 2>$null}catch{};try{schtasks /delete /tn "SystemHealthAdmin" /f 2>$null}catch{}
 $un=[System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 $ua=New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$p\HealthMonitor.ps1`""
-$ut=New-ScheduledTaskTrigger -AtLogOn
-$us=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Days 365)
-$up=New-ScheduledTaskPrincipal -UserId $un -LogonType Interactive -RunLevel Highest
+$ut=New-ScheduledTaskTrigger -AtLogOn -User $un
+$us=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Days 365) -MultipleInstances IgnoreNew
+$up=New-ScheduledTaskPrincipal -UserId $un -LogonType Interactive -RunLevel Limited
 Register-ScheduledTask -TaskName "SystemHealthMonitor" -Action $ua -Trigger $ut -Settings $us -Principal $up -Force|Out-Null
 $aa=New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$p\HealthMonitorAdmin.ps1`""
 $at=New-ScheduledTaskTrigger -AtStartup
